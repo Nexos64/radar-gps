@@ -5,6 +5,7 @@
 
 import { writable } from 'svelte/store';
 import { fetchSpeedLimit } from '$lib/sources/speedlimit';
+import { logError } from './errorlog';
 
 /** Current speed limit in km/h, or null if unknown */
 export const currentSpeedLimit = writable<number | null>(null);
@@ -26,8 +27,13 @@ export function updateSpeedLimit(lat: number, lng: number) {
 
 	if (debounceTimer) clearTimeout(debounceTimer);
 	debounceTimer = setTimeout(async () => {
-		const limit = await fetchSpeedLimit(lat, lng);
-		currentSpeedLimit.set(limit);
+		try {
+			const limit = await fetchSpeedLimit(lat, lng);
+			currentSpeedLimit.set(limit);
+		} catch (e) {
+			const msg = e instanceof Error ? e.message : String(e);
+			logError('speedlimit', msg);
+		}
 	}, DEBOUNCE_MS);
 }
 

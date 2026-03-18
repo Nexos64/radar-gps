@@ -15,6 +15,7 @@ import { getAllRadars } from '$lib/stores/radardb';
 import { getSettings } from '$lib/stores/settings';
 import { addToHistory } from '$lib/stores/history';
 import { destination } from '$lib/stores/destination';
+import { logError } from '$lib/stores/errorlog';
 
 // ── Types ──
 
@@ -204,7 +205,9 @@ export async function computeRoute(
 
 		computeRouteWithData(route, radarsOnRoute);
 	} catch (e) {
+		const msg = e instanceof Error ? e.message : String(e);
 		console.error('[nav] Route calculation failed:', e);
+		logError('navigation', msg);
 		throw e;
 	} finally {
 		navLoading.set(false);

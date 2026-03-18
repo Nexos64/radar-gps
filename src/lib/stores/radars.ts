@@ -5,6 +5,7 @@ import { getLastFetch, setLastFetch, storeRadars, getAllRadars, getRadarsInView 
 import { fetchLuftopRadars } from '$lib/sources/luftop';
 import { fetchOsmRadars } from '$lib/sources/overpass';
 import { fetchWazeAlerts } from '$lib/sources/waze';
+import { logError } from './errorlog';
 
 export const radars = writable<Radar[]>([]);
 export const radarLoading = writable(false);
@@ -28,7 +29,9 @@ async function refreshSource(
 		console.log(`[radars] ${source}: ${data.length} radars loaded`);
 		return true;
 	} catch (e) {
+		const msg = e instanceof Error ? e.message : String(e);
 		console.warn(`[radars] ${source} fetch failed:`, e);
+		logError(`radars/${source}`, msg);
 		return false;
 	}
 }

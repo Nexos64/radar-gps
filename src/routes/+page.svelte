@@ -11,6 +11,7 @@
 	import RoutePreview from '$lib/components/RoutePreview.svelte';
 	import TurnByTurn from '$lib/components/TurnByTurn.svelte';
 	import SettingsPage from '$lib/components/SettingsPage.svelte';
+	import AdminPage from '$lib/components/AdminPage.svelte';
 	import { requestWakeLock, releaseWakeLock } from '$lib/stores/wakelock';
 	import { unlockAudio } from '$lib/stores/audio';
 	import { position } from '$lib/stores/gps';
@@ -27,6 +28,7 @@
 	let routeError = '';
 	let mapNeedsRecenter = false;
 	let showSettings = false;
+	let showAdmin = false;
 
 	$: isNavActive = $navInfo.state === 'navigating';
 	$: isPreviewActive = $navInfo.state === 'preview';
@@ -159,7 +161,11 @@
 	{/if}
 
 	{#if showSettings}
-		<SettingsPage on:close={() => { showSettings = false; }} />
+		<SettingsPage on:close={() => { showSettings = false; }} on:admin={() => { showSettings = false; showAdmin = true; }} />
+	{/if}
+
+	{#if showAdmin}
+		<AdminPage on:close={() => { showAdmin = false; }} />
 	{/if}
 </div>
 

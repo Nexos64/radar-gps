@@ -1,5 +1,6 @@
 import { writable, derived } from 'svelte/store';
 import { GpsKalman } from './kalman';
+import { logError } from './errorlog';
 
 export interface GpsPosition {
 	lat: number;
@@ -142,6 +143,7 @@ function onPosition(geo: GeolocationPosition) {
 
 function onError(err: GeolocationPositionError) {
 	console.warn('GPS error:', err.message);
+	logError('gps', `Geolocation error: ${err.message} (code ${err.code})`);
 	gpsSignal.set('lost');
 	startTunnelExtrapolation();
 }
@@ -149,6 +151,7 @@ function onError(err: GeolocationPositionError) {
 export function startGps() {
 	if (watchId !== null) return;
 	if (!navigator.geolocation) {
+		logError('gps', 'Geolocation API non disponible');
 		gpsSignal.set('lost');
 		return;
 	}
