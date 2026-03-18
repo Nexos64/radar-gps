@@ -1,13 +1,14 @@
 import { writable } from 'svelte/store';
 import { TTL } from '$lib/config';
 import type { Radar } from '$lib/types';
-import { getLastFetch, setLastFetch, storeRadars, getAllRadars } from './radardb';
+import { getLastFetch, setLastFetch, storeRadars, getAllRadars, getRadarsInView } from './radardb';
 import { fetchLuftopRadars } from '$lib/sources/luftop';
 import { fetchOsmRadars } from '$lib/sources/overpass';
 import { fetchWazeAlerts } from '$lib/sources/waze';
 
 export const radars = writable<Radar[]>([]);
 export const radarLoading = writable(false);
+export const luftopStale = writable(false);
 
 let wazeInterval: ReturnType<typeof setInterval> | null = null;
 let mapBbox: { top: number; bottom: number; left: number; right: number } | null = null;
@@ -37,12 +38,30 @@ async function updateStore() {
 	radars.set(all);
 }
 
+/** Check if Luftop data is stale (> TTL) */
+async function checkLuftopStale() {
+	const last = await getLastFetch('luftop');
+	luftopStale.set(last === 0 || Date.now() - last > TTL.LUFTOP);
+}
+
+/** Load radars filtered by bbox and user position radius */
+export async function loadRadarsForView(
+	userLat: number,
+	userLng: number,
+	radiusM: number,
+	bbox: { north: number; south: number; east: number; west: number }
+): Promise<void> {
+	const visible = await getRadarsInView(userLat, userLng, radiusM, bbox);
+	radars.set(visible);
+}
+
 /** Load Luftop + OSM from IndexedDB/network, then refresh the store */
 export async function loadStaticRadars() {
 	radarLoading.set(true);
 
 	// Load cached data first
 	await updateStore();
+	await checkLuftopStale();
 
 	// Refresh expired sources in parallel
 	const [luftopChanged, osmChanged] = await Promise.all([
@@ -54,6 +73,7 @@ export async function loadStaticRadars() {
 		await updateStore();
 	}
 
+	await checkLuftopStale();
 	radarLoading.set(false);
 }
 

@@ -18,11 +18,21 @@ jobs:
           node-version: '20'
 
       - name: Fetch Luftop radars
+        id: fetch
         env:
           LUFTOP_API_KEY: ${{ secrets.LUFTOP_API_KEY }}
         run: node scripts/fetch-luftop.js
+        continue-on-error: true
+
+      - name: Warn if fetch failed
+        if: steps.fetch.outcome == 'failure'
+        run: |
+          echo "⚠️ Luftop fetch failed (API may block GitHub Actions IPs)."
+          echo "Run locally: LUFTOP_API_KEY=\$LUFTOP_API_KEY node scripts/fetch-luftop.js"
+          echo "Then commit static/data/radars-luftop.json"
 
       - name: Commit & push if changed
+        if: steps.fetch.outcome == 'success'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"

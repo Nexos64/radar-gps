@@ -94,6 +94,29 @@ export async function getRadarsBySource(source: string): Promise<Radar[]> {
 	return all.filter((r) => r.source === source);
 }
 
+/** Get radars within a radius from a position, filtered by bbox */
+export async function getRadarsInView(
+	userLat: number,
+	userLng: number,
+	radiusM: number,
+	bbox: { north: number; south: number; east: number; west: number }
+): Promise<Radar[]> {
+	const db = await open();
+	const all: Radar[] = await tx(db, STORE_RADARS, 'readonly', (s) => s.getAll());
+	db.close();
+
+	const inView = all.filter((r) => {
+		// Quick bbox check first
+		if (r.lat < bbox.south || r.lat > bbox.north || r.lng < bbox.west || r.lng > bbox.east) {
+			return false;
+		}
+		// Then distance check from user
+		return distanceM({ lat: userLat, lng: userLng }, r) <= radiusM;
+	});
+
+	return dedup(inView);
+}
+
 const SOURCE_PRIORITY: Record<string, number> = { luftop: 0, osm: 1, waze: 2 };
 const DEDUP_DISTANCE_M = 100;
 

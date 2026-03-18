@@ -16,3 +16,5 @@ export const TTL = {
 	OSM: 24 * 60 * 60 * 1000,          // 1 jour
 	WAZE: 5 * 60 * 1000                 // 5 minutes
 };
+
+export const RADAR_VIEW_RADIUS_M = 15_000; // 15 km
