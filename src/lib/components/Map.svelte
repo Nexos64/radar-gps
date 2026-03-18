@@ -6,6 +6,7 @@
 	import { radars, loadStaticRadars, startWazePolling, stopWazePolling, setWazeBbox, loadRadarsForView, luftopStale } from '$lib/stores/radars';
 	import { evaluateAlerts, resetAlerts } from '$lib/stores/alerts';
 	import { destination } from '$lib/stores/destination';
+	import { navInfo, navStartTick, updateNavPosition, isOffRoute, getRouteRadars } from '$lib/stores/navigation';
 	import { registerRadarIcons } from './radar-icons';
 	import type { Radar } from '$lib/types';
 	import type { Map as MLMap } from 'maplibre-gl';
@@ -14,19 +15,25 @@
 	let container: HTMLDivElement;
 	let map: MLMap;
 	let followMode = true;
-	let unsubPosition: (() => void) | null = null;
+	let cleanupFns: (() => void)[] = [];
 	let showStaleWarning = false;
 
-	const RADAR_TYPES = ['fixed', 'mobile', 'traffic_light', 'section_start', 'section_end', 'police', 'other'];
+	// ── Navigation tilt ──
+	const NAV_PITCH = 50; // degrees
+	const NAV_ZOOM_OFFSET = 1; // zoom in a bit more in nav mode
 
-	function zoomForSpeed(speedMs: number | null): number {
-		if (speedMs == null || speedMs < 1) return 16;
-		const kmh = speedMs * 3.6;
-		if (kmh < 30) return 16;
-		if (kmh < 60) return 15;
-		if (kmh < 90) return 14;
-		if (kmh < 120) return 13;
-		return 12;
+	function zoomForSpeed(speedMs: number | null, navigating: boolean): number {
+		let base: number;
+		if (speedMs == null || speedMs < 1) base = 16;
+		else {
+			const kmh = speedMs * 3.6;
+			if (kmh < 30) base = 16;
+			else if (kmh < 60) base = 15;
+			else if (kmh < 90) base = 14;
+			else if (kmh < 120) base = 13;
+			else base = 12;
+		}
+		return navigating ? base + NAV_ZOOM_OFFSET : base;
 	}
 
 	function radarsToGeoJson(radarList: Radar[]): GeoJSON.FeatureCollection {
@@ -45,6 +52,17 @@
 					icon: `radar-${r.type}`
 				}
 			}))
+		};
+	}
+
+	function routeToGeoJson(geometry: [number, number][]): GeoJSON.Feature {
+		return {
+			type: 'Feature',
+			geometry: {
+				type: 'LineString',
+				coordinates: geometry
+			},
+			properties: {}
 		};
 	}
 
@@ -70,7 +88,6 @@
 			west: bounds.getWest()
 		});
 
-		// Update the GeoJSON source
 		const src = map.getSource('radars');
 		if (src) {
 			const currentRadars = get(radars);
@@ -133,6 +150,38 @@
 			ctx.fill();
 			map.addImage('heading-arrow', { width: arrowSize, height: arrowSize, data: new Uint8Array(ctx.getImageData(0, 0, arrowSize, arrowSize).data) });
 
+			// ── Route polyline ──
+			map.addSource('route', {
+				type: 'geojson',
+				data: { type: 'FeatureCollection', features: [] }
+			});
+
+			// Route outline (darker, wider)
+			map.addLayer({
+				id: 'route-outline',
+				type: 'line',
+				source: 'route',
+				layout: { 'line-join': 'round', 'line-cap': 'round' },
+				paint: {
+					'line-color': '#1a5276',
+					'line-width': 8,
+					'line-opacity': 0.8
+				}
+			});
+
+			// Route main line
+			map.addLayer({
+				id: 'route-line',
+				type: 'line',
+				source: 'route',
+				layout: { 'line-join': 'round', 'line-cap': 'round' },
+				paint: {
+					'line-color': '#4285F4',
+					'line-width': 5,
+					'line-opacity': 0.9
+				}
+			});
+
 			// ── Position utilisateur ──
 			map.addSource('user-position', {
 				type: 'geojson',
@@ -188,7 +237,6 @@
 				data: { type: 'FeatureCollection', features: [] }
 			});
 
-			// Radar icons — symbol layer with per-type image and rotation
 			map.addLayer({
 				id: 'radar-icons',
 				type: 'symbol',
@@ -198,7 +246,6 @@
 					'icon-size': 0.7,
 					'icon-allow-overlap': true,
 					'icon-ignore-placement': true,
-					// Rotate the icon if the radar has a direction and is not bidirectional
 					'icon-rotate': [
 						'case',
 						['all', ['has', 'angle'], ['!', ['get', 'bidirectional']]],
@@ -209,7 +256,6 @@
 				}
 			});
 
-			// Speed limit label on top of the radar icon
 			map.addLayer({
 				id: 'radar-speed-labels',
 				type: 'symbol',
@@ -230,7 +276,6 @@
 				}
 			});
 
-			// Direction arrow for unidirectional radars
 			map.addLayer({
 				id: 'radar-direction',
 				type: 'symbol',
@@ -259,12 +304,10 @@
 			pinCanvas.width = pinSize;
 			pinCanvas.height = pinSize;
 			const pinCtx = pinCanvas.getContext('2d')!;
-			// Drop shadow
 			pinCtx.fillStyle = 'rgba(0,0,0,0.3)';
 			pinCtx.beginPath();
 			pinCtx.arc(pinSize / 2 + 1, pinSize * 0.38 + 2, 14, 0, Math.PI * 2);
 			pinCtx.fill();
-			// Pin body
 			pinCtx.fillStyle = '#4285F4';
 			pinCtx.beginPath();
 			pinCtx.arc(pinSize / 2, pinSize * 0.38, 14, 0, Math.PI * 2);
@@ -272,14 +315,12 @@
 			pinCtx.strokeStyle = '#ffffff';
 			pinCtx.lineWidth = 2.5;
 			pinCtx.stroke();
-			// Pin point
 			pinCtx.fillStyle = '#4285F4';
 			pinCtx.beginPath();
 			pinCtx.moveTo(pinSize / 2 - 7, pinSize * 0.5);
 			pinCtx.lineTo(pinSize / 2, pinSize - 4);
 			pinCtx.lineTo(pinSize / 2 + 7, pinSize * 0.5);
 			pinCtx.fill();
-			// Inner dot
 			pinCtx.fillStyle = '#ffffff';
 			pinCtx.beginPath();
 			pinCtx.arc(pinSize / 2, pinSize * 0.38, 5, 0, Math.PI * 2);
@@ -333,7 +374,6 @@
 		map.on('dragstart', () => { followMode = false; });
 		map.on('moveend', () => {
 			updateWazeBbox();
-			// Refresh visible radars on map move
 			let currentPos: GpsPosition | null = null;
 			const unsub = position.subscribe(p => { currentPos = p; });
 			unsub();
@@ -341,20 +381,22 @@
 		});
 
 		// ── Souscription position GPS ──
-		unsubPosition = position.subscribe(($pos) => {
+		const unsubPosition = position.subscribe(($pos) => {
 			if (!$pos || !map || !map.getSource('user-position')) return;
+
+			const nav = get(navInfo);
+			const navigating = nav.state === 'navigating';
 
 			const metersPerPixel = getMetersPerPixel($pos.lat, map.getZoom());
 			const accuracyRadius = Math.max($pos.accuracy / metersPerPixel, 4);
+			const hasHeading = $pos.heading != null && $pos.speed != null && $pos.speed > 1;
 
 			const feature: GeoJSON.Feature = {
 				type: 'Feature',
 				geometry: { type: 'Point', coordinates: [$pos.lng, $pos.lat] },
 				properties: {
 					accuracyRadius,
-					...(($pos.heading != null && $pos.speed != null && $pos.speed > 1)
-						? { heading: $pos.heading }
-						: {})
+					...(hasHeading ? { heading: $pos.heading } : {})
 				}
 			};
 
@@ -366,24 +408,33 @@
 			if (followMode) {
 				map.easeTo({
 					center: [$pos.lng, $pos.lat],
-					zoom: zoomForSpeed($pos.speed),
-					bearing: ($pos.heading != null && $pos.speed != null && $pos.speed > 1)
-						? $pos.heading : map.getBearing(),
+					zoom: zoomForSpeed($pos.speed, navigating),
+					bearing: hasHeading ? $pos.heading! : map.getBearing(),
+					pitch: navigating ? NAV_PITCH : 0,
 					duration: 1000
 				});
 			}
 
-			// Refresh visible radars when position changes
+			// Refresh visible radars
 			debouncedRefresh($pos);
 
-			// Évaluer les alertes radar
-			evaluateAlerts($pos, get(radars));
+			// Navigation tracking
+			if (navigating) {
+				updateNavPosition($pos);
+				// En navigation, alerter uniquement sur les radars de l'itinéraire
+				evaluateAlerts($pos, getRouteRadars());
+			} else {
+				// Hors navigation, alerter sur tous les radars visibles
+				evaluateAlerts($pos, get(radars));
+			}
 		});
+		cleanupFns.push(unsubPosition);
 
 		// ── Souscription Luftop stale ──
 		const unsubStale = luftopStale.subscribe((stale) => {
 			showStaleWarning = stale;
 		});
+		cleanupFns.push(unsubStale);
 
 		// ── Souscription destination ──
 		const unsubDest = destination.subscribe(($dest) => {
@@ -398,8 +449,6 @@
 						properties: { label: $dest.label }
 					}]
 				});
-
-				// Fly to destination without disabling follow mode
 				map.flyTo({ center: [$dest.lng, $dest.lat], zoom: 14, duration: 1500 });
 			} else {
 				(map.getSource('destination') as any).setData({
@@ -408,18 +457,49 @@
 				});
 			}
 		});
+		cleanupFns.push(unsubDest);
 
-		// Store unsub for cleanup
-		const origDestroy = unsubPosition;
-		unsubPosition = () => {
-			origDestroy?.();
-			unsubStale();
-			unsubDest();
-		};
+		// ── Souscription navigation (route polyline) ──
+		const unsubNav = navInfo.subscribe(($nav) => {
+			if (!map || !map.getSource('route')) return;
+
+			if ($nav.route) {
+				(map.getSource('route') as any).setData(routeToGeoJson($nav.route.geometry));
+			} else {
+				(map.getSource('route') as any).setData({ type: 'FeatureCollection', features: [] });
+				// Reset pitch when leaving navigation
+				if (map.getPitch() > 0) {
+					map.easeTo({ pitch: 0, duration: 500 });
+				}
+			}
+		});
+		cleanupFns.push(unsubNav);
+
+		// ── Recenter on user when navigation starts ──
+		let prevTick = get(navStartTick);
+		const unsubNavStart = navStartTick.subscribe((tick) => {
+			if (tick > prevTick) {
+				prevTick = tick;
+				followMode = true;
+				const pos = get(position);
+				if (pos && map) {
+					map.easeTo({
+						center: [pos.lng, pos.lat],
+						zoom: zoomForSpeed(pos.speed, true),
+						bearing: (pos.heading != null && pos.speed != null && pos.speed > 1)
+							? pos.heading : map.getBearing(),
+						pitch: NAV_PITCH,
+						duration: 1000
+					});
+				}
+			}
+		});
+		cleanupFns.push(unsubNavStart);
 	});
 
 	onDestroy(() => {
-		unsubPosition?.();
+		for (const fn of cleanupFns) fn();
+		cleanupFns = [];
 		stopGps();
 		stopWazePolling();
 		resetAlerts();
