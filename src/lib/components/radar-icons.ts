@@ -1,19 +1,70 @@
 import type { Map as MLMap } from 'maplibre-gl';
 import type { RadarType } from '$lib/types';
 
-/** Radar icon config per type */
-const ICON_CONFIG: Record<RadarType | 'default', { fill: string; symbol: string }> = {
-	fixed:         { fill: '#e53935', symbol: '📷' },
-	mobile:        { fill: '#f57c00', symbol: '📱' },
-	traffic_light: { fill: '#388e3c', symbol: '🚦' },
-	section_start: { fill: '#ab47bc', symbol: '⏱' },
-	section_end:   { fill: '#ab47bc', symbol: '⏱' },
-	police:        { fill: '#1565c0', symbol: '' },  // custom drawn
-	other:         { fill: '#757575', symbol: '⚠️' },
-	default:       { fill: '#757575', symbol: '⚠️' }
-};
-
 const ICON_SIZE = 48;
+
+/** Draw a modern camera icon (outline style, white on dark background) */
+function renderCameraIcon(): ImageData {
+	const canvas = document.createElement('canvas');
+	canvas.width = ICON_SIZE;
+	canvas.height = ICON_SIZE;
+	const ctx = canvas.getContext('2d')!;
+	const cx = ICON_SIZE / 2;
+	const cy = ICON_SIZE / 2;
+
+	// Dark semi-transparent circle background for visibility
+	ctx.beginPath();
+	ctx.arc(cx, cy, ICON_SIZE / 2 - 2, 0, Math.PI * 2);
+	ctx.fillStyle = 'rgba(30, 30, 30, 0.85)';
+	ctx.fill();
+	ctx.strokeStyle = '#ffffff';
+	ctx.lineWidth = 2;
+	ctx.stroke();
+
+	// Camera body — rounded rectangle
+	const bw = 24, bh = 16;
+	const bx = cx - bw / 2, by = cy - bh / 2 + 2;
+	const br = 3;
+	ctx.beginPath();
+	ctx.moveTo(bx + br, by);
+	ctx.lineTo(bx + bw - br, by);
+	ctx.quadraticCurveTo(bx + bw, by, bx + bw, by + br);
+	ctx.lineTo(bx + bw, by + bh - br);
+	ctx.quadraticCurveTo(bx + bw, by + bh, bx + bw - br, by + bh);
+	ctx.lineTo(bx + br, by + bh);
+	ctx.quadraticCurveTo(bx, by + bh, bx, by + bh - br);
+	ctx.lineTo(bx, by + br);
+	ctx.quadraticCurveTo(bx, by, bx + br, by);
+	ctx.closePath();
+	ctx.strokeStyle = '#ffffff';
+	ctx.lineWidth = 2.2;
+	ctx.stroke();
+
+	// Camera bump on top (viewfinder)
+	ctx.beginPath();
+	ctx.moveTo(cx - 5, by);
+	ctx.lineTo(cx - 3, by - 5);
+	ctx.lineTo(cx + 3, by - 5);
+	ctx.lineTo(cx + 5, by);
+	ctx.strokeStyle = '#ffffff';
+	ctx.lineWidth = 2.2;
+	ctx.stroke();
+
+	// Lens circle
+	ctx.beginPath();
+	ctx.arc(cx, cy + 2, 5.5, 0, Math.PI * 2);
+	ctx.strokeStyle = '#ffffff';
+	ctx.lineWidth = 2;
+	ctx.stroke();
+
+	// Small dot (flash/sensor) top right
+	ctx.beginPath();
+	ctx.arc(bx + bw - 5, by + 4.5, 1.5, 0, Math.PI * 2);
+	ctx.fillStyle = '#ffffff';
+	ctx.fill();
+
+	return ctx.getImageData(0, 0, ICON_SIZE, ICON_SIZE);
+}
 
 /** Draw a police officer icon (cap + silhouette) on blue circle */
 function renderPoliceIcon(): ImageData {
@@ -83,46 +134,28 @@ function renderPoliceIcon(): ImageData {
 	return ctx.getImageData(0, 0, ICON_SIZE, ICON_SIZE);
 }
 
-/** Generate a radar icon as ImageData for MapLibre */
-function renderRadarIcon(fill: string, symbol: string): ImageData {
-	const canvas = document.createElement('canvas');
-	canvas.width = ICON_SIZE;
-	canvas.height = ICON_SIZE;
-	const ctx = canvas.getContext('2d')!;
-
-	// Circle background
-	ctx.beginPath();
-	ctx.arc(ICON_SIZE / 2, ICON_SIZE / 2, ICON_SIZE / 2 - 3, 0, Math.PI * 2);
-	ctx.fillStyle = fill;
-	ctx.fill();
-	ctx.strokeStyle = '#ffffff';
-	ctx.lineWidth = 2.5;
-	ctx.stroke();
-
-	// Emoji/symbol in center
-	ctx.font = `${ICON_SIZE * 0.45}px sans-serif`;
-	ctx.textAlign = 'center';
-	ctx.textBaseline = 'middle';
-	ctx.fillText(symbol, ICON_SIZE / 2, ICON_SIZE / 2 + 1);
-
-	return ctx.getImageData(0, 0, ICON_SIZE, ICON_SIZE);
-}
-
-/** Register all radar icons on the map */
+/** Register all radar icons on the map — all types use the same camera icon except police */
 export function registerRadarIcons(map: MLMap) {
-	for (const [type, config] of Object.entries(ICON_CONFIG)) {
-		let imgData: ImageData;
-		if (type === 'police') {
-			imgData = renderPoliceIcon();
-		} else {
-			imgData = renderRadarIcon(config.fill, config.symbol);
-		}
+	const cameraImg = renderCameraIcon();
+	const policeImg = renderPoliceIcon();
+
+	const types: (RadarType | 'default')[] = [
+		'fixed', 'mobile', 'traffic_light', 'section_start', 'section_end', 'other', 'default'
+	];
+
+	for (const type of types) {
 		map.addImage(`radar-${type}`, {
 			width: ICON_SIZE,
 			height: ICON_SIZE,
-			data: new Uint8Array(imgData.data)
+			data: new Uint8Array(cameraImg.data)
 		});
 	}
+
+	map.addImage('radar-police', {
+		width: ICON_SIZE,
+		height: ICON_SIZE,
+		data: new Uint8Array(policeImg.data)
+	});
 }
 
 /** Get the MapLibre image name for a radar type */

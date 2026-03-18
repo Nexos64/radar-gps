@@ -231,26 +231,25 @@
 			// ── Register radar icons ──
 			registerRadarIcons(map);
 
-			// ── Navigation arrow icon (moving) ──
+			// ── Navigation arrow icon (moving) — solid triangle pointer ──
 			{
 				const s = 64;
 				const c = document.createElement('canvas');
 				c.width = s; c.height = s;
 				const ctx = c.getContext('2d')!;
-				const cx = s / 2, cy = s / 2;
+				const cx = s / 2;
 
 				// Shadow
 				ctx.save();
-				ctx.shadowColor = 'rgba(0,0,0,0.35)';
+				ctx.shadowColor = 'rgba(0,0,0,0.4)';
 				ctx.shadowBlur = 6;
 				ctx.shadowOffsetY = 2;
 
-				// Main arrow shape — sleek navigation chevron
+				// Solid triangle pointing UP with rounded corners
 				ctx.beginPath();
-				ctx.moveTo(cx, 6);          // top point
-				ctx.lineTo(cx + 20, 52);    // bottom right
-				ctx.lineTo(cx, 40);         // center notch
-				ctx.lineTo(cx - 20, 52);    // bottom left
+				ctx.moveTo(cx, 6);           // top point
+				ctx.lineTo(cx + 22, 54);     // bottom right
+				ctx.lineTo(cx - 22, 54);     // bottom left
 				ctx.closePath();
 				ctx.fillStyle = '#4285F4';
 				ctx.fill();
@@ -262,9 +261,8 @@
 				ctx.lineJoin = 'round';
 				ctx.beginPath();
 				ctx.moveTo(cx, 6);
-				ctx.lineTo(cx + 20, 52);
-				ctx.lineTo(cx, 40);
-				ctx.lineTo(cx - 20, 52);
+				ctx.lineTo(cx + 22, 54);
+				ctx.lineTo(cx - 22, 54);
 				ctx.closePath();
 				ctx.stroke();
 
@@ -399,25 +397,6 @@
 				}
 			});
 
-			map.addLayer({
-				id: 'radar-speed-labels',
-				type: 'symbol',
-				source: 'radars',
-				filter: ['has', 'speedLimit'],
-				layout: {
-					'text-field': ['to-string', ['get', 'speedLimit']],
-					'text-size': 11,
-					'text-font': ['Noto Sans Bold'],
-					'text-allow-overlap': true,
-					'text-ignore-placement': true,
-					'text-offset': [0, 2.2]
-				},
-				paint: {
-					'text-color': '#ffffff',
-					'text-halo-color': 'rgba(0,0,0,0.8)',
-					'text-halo-width': 1.5
-				}
-			});
 
 			// ── Destination marker ──
 			map.addSource('destination', {
@@ -518,9 +497,9 @@
 			const hasHeading = $pos.heading != null && $pos.speed != null && $pos.speed > 1;
 			const compass = get(compassHeading);
 
-			// Determine marker mode and rotation
-			const moving = hasHeading;
-			const rotation = moving ? ($pos.heading ?? 0) : (compass ?? 0);
+			// Determine marker mode and rotation — always show arrow when navigating
+			const moving = hasHeading || navigating;
+			const rotation = hasHeading ? ($pos.heading ?? 0) : (compass ?? 0);
 
 			const feature: GeoJSON.Feature = {
 				type: 'Feature',
