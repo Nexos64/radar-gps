@@ -142,6 +142,12 @@ function onPosition(geo: GeolocationPosition) {
 }
 
 function onError(err: GeolocationPositionError) {
+	// Code 2 = POSITION_UNAVAILABLE — erreur temporaire sur macOS/Safari (CoreLocation)
+	// On attend simplement sans déclarer le GPS perdu
+	if (err.code === 2) {
+		console.warn('GPS: position temporairement indisponible, on attend...');
+		return;
+	}
 	console.warn('GPS error:', err.message);
 	logError('gps', `Geolocation error: ${err.message} (code ${err.code})`);
 	gpsSignal.set('lost');
