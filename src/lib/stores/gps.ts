@@ -126,19 +126,19 @@ function onPosition(geo: GeolocationPosition) {
 		timestamp: geo.timestamp
 	};
 
+	// Always reset the lost timer — we ARE receiving GPS signals
+	gpsSignal.set(pos.accuracy <= WEAK_ACCURACY_M ? 'strong' : 'weak');
+	resetLostTimer();
+	stopTunnelExtrapolation();
+
 	if (lastPos && distanceM(lastPos, pos) < MIN_DISTANCE_M) return;
 
 	// Store for tunnel extrapolation
 	kalman.setLastValid(filtered.lat, filtered.lng, geo.coords.heading, geo.coords.speed);
 
-	// Stop tunnel mode if active
-	stopTunnelExtrapolation();
-
 	lastUpdate = now;
 	lastPos = pos;
 	position.set(pos);
-	gpsSignal.set(pos.accuracy <= WEAK_ACCURACY_M ? 'strong' : 'weak');
-	resetLostTimer();
 }
 
 function onError(err: GeolocationPositionError) {
