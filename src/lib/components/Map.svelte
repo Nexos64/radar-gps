@@ -169,7 +169,7 @@
 			map.addSource('tomtom-traffic', {
 				type: 'raster',
 				tiles: [
-					`https://api.tomtom.com/traffic/map/4/tile/flow/relative0/{z}/{x}/{y}.png?key=${TOMTOM_API_KEY}&tileSize=256&style=relative0-dark`
+					`https://api.tomtom.com/traffic/map/4/tile/flow/relative-delay/{z}/{x}/{y}.png?key=${TOMTOM_API_KEY}&tileSize=256&style=relative-delay-dark`
 				],
 				tileSize: 256,
 				attribution: '© <a href="https://www.tomtom.com">TomTom</a>'

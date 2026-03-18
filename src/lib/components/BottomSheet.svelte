@@ -3,7 +3,15 @@
 </script>
 
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { createEventDispatcher, onMount } from 'svelte';
+	import { settings } from '$lib/stores/settings';
+	import { routeHistory, clearHistory } from '$lib/stores/history';
+	import type { RouteHistoryEntry } from '$lib/stores/history';
+
+	const dispatch = createEventDispatcher<{
+		shortcut: { label: string; detail: string; lat: number; lng: number };
+		history: RouteHistoryEntry;
+	}>();
 
 	/**
 	 * Bottom sheet à 3 états :
@@ -76,6 +84,27 @@
 		state = 'closed';
 	}
 
+	function selectShortcut(type: 'home' | 'work') {
+		const addr = type === 'home' ? $settings.home : $settings.work;
+		if (!addr) return;
+		dispatch('shortcut', addr);
+	}
+
+	function selectHistory(entry: RouteHistoryEntry) {
+		dispatch('history', entry);
+	}
+
+	function formatTimeAgo(timestamp: number): string {
+		const diff = Date.now() - timestamp;
+		const mins = Math.floor(diff / 60000);
+		if (mins < 60) return `il y a ${mins} min`;
+		const hours = Math.floor(mins / 60);
+		if (hours < 24) return `il y a ${hours}h`;
+		const days = Math.floor(hours / 24);
+		if (days === 1) return 'hier';
+		return `il y a ${days}j`;
+	}
+
 	onMount(() => {
 		windowHeight = window.innerHeight;
 		currentTranslate = closedTop;
@@ -85,6 +114,17 @@
 		return () => window.removeEventListener('resize', onResize);
 	});
 </script>
+
+<!-- Overlay — ferme le sheet quand on clique en dehors -->
+{#if state !== 'closed'}
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<div
+		class="sheet-overlay"
+		style="top: 0; height: {currentTranslate}px;"
+		on:click={() => { state = 'closed'; }}
+		on:touchstart|preventDefault={() => { state = 'closed'; }}
+	></div>
+{/if}
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
@@ -100,13 +140,72 @@
 		<div class="handle"></div>
 	</div>
 
-	<!-- Contenu (slot) -->
+	<!-- Contenu (slot = SearchBar) -->
 	<div class="sheet-content">
 		<slot />
+
+		<!-- Shortcuts & History (visible en half/full) -->
+		{#if state !== 'closed'}
+			<!-- Home / Work shortcuts -->
+			{#if $settings.home || $settings.work}
+				<div class="shortcuts">
+					{#if $settings.home}
+						<button class="shortcut-btn" on:click={() => selectShortcut('home')}>
+							<span class="shortcut-icon">🏠</span>
+							<div class="shortcut-info">
+								<div class="shortcut-label">Maison</div>
+								<div class="shortcut-detail">{$settings.home.label}</div>
+							</div>
+						</button>
+					{/if}
+					{#if $settings.work}
+						<button class="shortcut-btn" on:click={() => selectShortcut('work')}>
+							<span class="shortcut-icon">💼</span>
+							<div class="shortcut-info">
+								<div class="shortcut-label">Travail</div>
+								<div class="shortcut-detail">{$settings.work.label}</div>
+							</div>
+						</button>
+					{/if}
+				</div>
+			{/if}
+
+			<!-- Recent routes -->
+			{#if $routeHistory.length > 0}
+				<div class="history-section">
+					<div class="history-header">
+						<span class="history-title">Récents</span>
+						<button class="history-clear" on:click={clearHistory}>Effacer</button>
+					</div>
+					<div class="history-list">
+						{#each $routeHistory as entry (entry.id)}
+							<button class="history-item" on:click={() => selectHistory(entry)}>
+								<svg class="history-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+									<circle cx="12" cy="12" r="10"/>
+									<polyline points="12 6 12 12 16 14"/>
+								</svg>
+								<div class="history-info">
+									<div class="history-label">{entry.label}</div>
+									<div class="history-detail">{entry.detail}</div>
+								</div>
+								<span class="history-time">{formatTimeAgo(entry.timestamp)}</span>
+							</button>
+						{/each}
+					</div>
+				</div>
+			{/if}
+		{/if}
 	</div>
 </div>
 
 <style>
+	.sheet-overlay {
+		position: fixed;
+		left: 0;
+		right: 0;
+		z-index: 39;
+	}
+
 	.bottom-sheet {
 		position: fixed;
 		left: 0;
@@ -140,9 +239,146 @@
 
 	.sheet-content {
 		flex: 1;
-		overflow: hidden;
+		overflow-y: auto;
 		display: flex;
 		flex-direction: column;
 		padding: 0 16px 16px;
+		-webkit-overflow-scrolling: touch;
+	}
+
+	/* Shortcuts */
+	.shortcuts {
+		display: flex;
+		gap: 10px;
+		margin-top: 16px;
+	}
+
+	.shortcut-btn {
+		flex: 1;
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		padding: 12px;
+		background: rgba(255, 255, 255, 0.06);
+		border: none;
+		border-radius: 12px;
+		cursor: pointer;
+		text-align: left;
+	}
+
+	.shortcut-btn:active {
+		background: rgba(255, 255, 255, 0.1);
+	}
+
+	.shortcut-icon {
+		font-size: 20px;
+		flex-shrink: 0;
+	}
+
+	.shortcut-info {
+		min-width: 0;
+		flex: 1;
+	}
+
+	.shortcut-label {
+		font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+		font-size: 14px;
+		font-weight: 600;
+		color: #ffffff;
+	}
+
+	.shortcut-detail {
+		font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+		font-size: 11px;
+		color: rgba(255, 255, 255, 0.4);
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
+	/* History */
+	.history-section {
+		margin-top: 20px;
+	}
+
+	.history-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		margin-bottom: 8px;
+	}
+
+	.history-title {
+		font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+		font-size: 13px;
+		font-weight: 600;
+		color: rgba(255, 255, 255, 0.4);
+		text-transform: uppercase;
+		letter-spacing: 0.5px;
+	}
+
+	.history-clear {
+		background: none;
+		border: none;
+		color: rgba(255, 255, 255, 0.35);
+		font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+		font-size: 12px;
+		cursor: pointer;
+		padding: 4px 8px;
+	}
+
+	.history-list {
+		display: flex;
+		flex-direction: column;
+	}
+
+	.history-item {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		padding: 12px 0;
+		border: none;
+		border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+		background: none;
+		cursor: pointer;
+		text-align: left;
+		width: 100%;
+	}
+
+	.history-item:active {
+		background: rgba(255, 255, 255, 0.04);
+	}
+
+	.history-icon {
+		color: rgba(255, 255, 255, 0.3);
+		flex-shrink: 0;
+	}
+
+	.history-info {
+		flex: 1;
+		min-width: 0;
+	}
+
+	.history-label {
+		font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+		font-size: 14px;
+		font-weight: 600;
+		color: #ffffff;
+	}
+
+	.history-detail {
+		font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+		font-size: 12px;
+		color: rgba(255, 255, 255, 0.4);
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
+	.history-time {
+		font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+		font-size: 11px;
+		color: rgba(255, 255, 255, 0.3);
+		flex-shrink: 0;
 	}
 </style>

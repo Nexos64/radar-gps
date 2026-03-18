@@ -117,14 +117,23 @@ function buildInstruction(maneuver: string, modifier: string | null, name: strin
 	return name ? `${parts}, ${name}` : parts;
 }
 
+export interface RouteOptions {
+	avoidHighways?: boolean;
+}
+
 export async function calculateRoute(
 	fromLat: number,
 	fromLng: number,
 	toLat: number,
-	toLng: number
+	toLng: number,
+	options: RouteOptions = {}
 ): Promise<Route> {
-	const url = `${OSRM_BASE}/${fromLng},${fromLat};${toLng},${toLat}` +
+	let url = `${OSRM_BASE}/${fromLng},${fromLat};${toLng},${toLat}` +
 		`?overview=full&geometries=polyline6&steps=true&annotations=false`;
+
+	if (options.avoidHighways) {
+		url += '&exclude=motorway';
+	}
 
 	const res = await fetch(url);
 	if (!res.ok) throw new Error(`OSRM ${res.status}`);
