@@ -1,7 +1,8 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 
-const WAZE_URL = 'https://www.waze.com/live-map/api/georss';
+// ROW (Rest Of World) real-time server — works for Europe (FR/CH/DE)
+const WAZE_URL = 'https://www.waze.com/row-rtserver/web/TGeoRSS';
 const ALLOWED_TYPES = new Set(['POLICE', 'HAZARD']);
 
 export const GET: RequestHandler = async ({ url }) => {
@@ -14,12 +15,14 @@ export const GET: RequestHandler = async ({ url }) => {
 		return error(400, 'Missing bbox params: top, bottom, left, right');
 	}
 
-	const wazeUrl = `${WAZE_URL}?top=${top}&bottom=${bottom}&left=${left}&right=${right}&env=row&types=alerts`;
+	const wazeUrl = `${WAZE_URL}?bottom=${bottom}&top=${top}&left=${left}&right=${right}&ma=600&mu=0&types=alerts`;
 
 	const res = await fetch(wazeUrl, {
 		headers: {
-			'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-			'Referer': 'https://www.waze.com/live-map'
+			'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+			'Referer': 'https://www.waze.com/live-map',
+			'Accept': 'application/json',
+			'Accept-Language': 'fr-FR,fr;q=0.9,en;q=0.8'
 		}
 	});
 
@@ -41,6 +44,7 @@ export const GET: RequestHandler = async ({ url }) => {
 			bidirectional: true,
 			source: 'waze' as const,
 			confidence: a.confidence ?? 0,
+			nThumbsUp: a.nThumbsUp ?? 0,
 			reportedAt: a.pubMillis
 		}));
 
