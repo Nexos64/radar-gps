@@ -1,11 +1,8 @@
 /**
- * OSM speed limit lookup via Overpass API.
- *
- * Queries the nearest road segment to the user's position
- * and returns the maxspeed tag if available.
+ * Speed limit lookup — TomTom Snap to Roads API with Swiss-standard fallback.
  */
 
-const OVERPASS_URL = 'https://overpass-api.de/api/interpreter';
+import { TOMTOM_API_KEY } from '$lib/config';
 
 /** Cache: "lat,lng" rounded to ~100m → speed limit */
 const cache = new Map<string, { limit: number | null; timestamp: number }>();
@@ -16,8 +13,50 @@ function cacheKey(lat: number, lng: number): string {
 	return `${lat.toFixed(CACHE_PRECISION)},${lng.toFixed(CACHE_PRECISION)}`;
 }
 
+/** Swiss/European default speed limits by road class */
+const FALLBACK_LIMITS: Record<string, number> = {
+	motorway: 120,
+	motorway_link: 120,
+	trunk: 100,
+	trunk_link: 80,
+	primary: 80,
+	primary_link: 80,
+	secondary: 80,
+	secondary_link: 80,
+	tertiary: 60,
+	tertiary_link: 60,
+	residential: 50,
+	living_street: 20,
+	unclassified: 80,
+	service: 30
+};
+
 /**
- * Fetch speed limit for a position from OSM.
+ * Query the nearest road class from OSM Overpass (for fallback purposes).
+ * Returns the highway type or null.
+ */
+async function fetchRoadClass(lat: number, lng: number): Promise<string | null> {
+	try {
+		const query = `[out:json][timeout:5];way(around:30,${lat},${lng})["highway"];out tags 1;`;
+		const res = await fetch('https://overpass-api.de/api/interpreter', {
+			method: 'POST',
+			body: `data=${encodeURIComponent(query)}`,
+			headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+		});
+		if (!res.ok) return null;
+		const data = await res.json();
+		if (data.elements?.length > 0) {
+			return data.elements[0].tags?.highway || null;
+		}
+	} catch {
+		// ignore
+	}
+	return null;
+}
+
+/**
+ * Fetch speed limit for a position from TomTom Snap to Roads API.
+ * Falls back to Swiss standard limits based on OSM road class.
  * Returns speed limit in km/h, or null if unavailable.
  */
 export async function fetchSpeedLimit(lat: number, lng: number): Promise<number | null> {
@@ -28,44 +67,43 @@ export async function fetchSpeedLimit(lat: number, lng: number): Promise<number 
 	}
 
 	try {
-		// Query: find the nearest road within 30m and get its maxspeed
-		const query = `
-[out:json][timeout:5];
-way(around:30,${lat},${lng})["highway"]["maxspeed"];
-out tags 1;
-`.trim();
-
-		const res = await fetch(OVERPASS_URL, {
+		// TomTom Snap to Roads — gives speed limit for the nearest road segment
+		const url = `https://api.tomtom.com/snap-to-roads/1/snap-to-roads?key=${TOMTOM_API_KEY}`;
+		const res = await fetch(url, {
 			method: 'POST',
-			body: `data=${encodeURIComponent(query)}`,
-			headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				points: [{ latitude: lat, longitude: lng }],
+				fields: '{snappedPoints{speedLimit}}'
+			})
 		});
 
-		if (!res.ok) {
-			cache.set(key, { limit: null, timestamp: Date.now() });
-			return null;
-		}
-
-		const data = await res.json();
-		let limit: number | null = null;
-
-		if (data.elements?.length > 0) {
-			const maxspeed = data.elements[0].tags?.maxspeed;
-			if (maxspeed) {
-				// Parse "50", "30 mph" etc.
-				const parsed = parseInt(maxspeed, 10);
-				if (!isNaN(parsed)) {
-					// Convert mph if needed
-					limit = maxspeed.includes('mph') ? Math.round(parsed * 1.60934) : parsed;
-				}
+		if (res.ok) {
+			const data = await res.json();
+			const speedLimit = data?.snappedPoints?.[0]?.speedLimit;
+			if (speedLimit && typeof speedLimit === 'number' && speedLimit > 0) {
+				cache.set(key, { limit: speedLimit, timestamp: Date.now() });
+				return speedLimit;
 			}
 		}
-
-		cache.set(key, { limit, timestamp: Date.now() });
-		return limit;
 	} catch {
-		return null;
+		// TomTom failed, fall through to fallback
 	}
+
+	// Fallback: get road class from OSM and use Swiss defaults
+	try {
+		const roadClass = await fetchRoadClass(lat, lng);
+		if (roadClass && roadClass in FALLBACK_LIMITS) {
+			const limit = FALLBACK_LIMITS[roadClass];
+			cache.set(key, { limit, timestamp: Date.now() });
+			return limit;
+		}
+	} catch {
+		// ignore
+	}
+
+	cache.set(key, { limit: null, timestamp: Date.now() });
+	return null;
 }
 
 /** Clear the cache */
