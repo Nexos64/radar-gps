@@ -31,7 +31,13 @@ function mapFlash(flash) {
 async function fetchCountry(pays) {
 	const url = `${API_BASE}?key=${API_KEY}&format=json&nbr=10000&pays=${pays}`;
 	console.log(`Fetching ${pays.toUpperCase()}...`);
-	const res = await fetch(url);
+	const res = await fetch(url, {
+		headers: {
+			'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36',
+			'Referer': 'https://lufop.net/',
+			'Accept': 'application/json'
+		}
+	});
 	if (!res.ok) throw new Error(`HTTP ${res.status} for ${pays}`);
 	const data = await res.json();
 	console.log(`  → ${data.length} radars`);
