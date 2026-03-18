@@ -5,6 +5,7 @@
 	import { position, startGps, stopGps } from '$lib/stores/gps';
 	import { radars, loadStaticRadars, startWazePolling, stopWazePolling, setWazeBbox, loadRadarsForView, luftopStale } from '$lib/stores/radars';
 	import { evaluateAlerts, resetAlerts } from '$lib/stores/alerts';
+	import { destination } from '$lib/stores/destination';
 	import { registerRadarIcons } from './radar-icons';
 	import type { Radar } from '$lib/types';
 	import type { Map as MLMap } from 'maplibre-gl';
@@ -246,6 +247,82 @@
 				}
 			});
 
+			// ── Destination marker ──
+			map.addSource('destination', {
+				type: 'geojson',
+				data: { type: 'FeatureCollection', features: [] }
+			});
+
+			// Destination pin icon
+			const pinSize = 48;
+			const pinCanvas = document.createElement('canvas');
+			pinCanvas.width = pinSize;
+			pinCanvas.height = pinSize;
+			const pinCtx = pinCanvas.getContext('2d')!;
+			// Drop shadow
+			pinCtx.fillStyle = 'rgba(0,0,0,0.3)';
+			pinCtx.beginPath();
+			pinCtx.arc(pinSize / 2 + 1, pinSize * 0.38 + 2, 14, 0, Math.PI * 2);
+			pinCtx.fill();
+			// Pin body
+			pinCtx.fillStyle = '#4285F4';
+			pinCtx.beginPath();
+			pinCtx.arc(pinSize / 2, pinSize * 0.38, 14, 0, Math.PI * 2);
+			pinCtx.fill();
+			pinCtx.strokeStyle = '#ffffff';
+			pinCtx.lineWidth = 2.5;
+			pinCtx.stroke();
+			// Pin point
+			pinCtx.fillStyle = '#4285F4';
+			pinCtx.beginPath();
+			pinCtx.moveTo(pinSize / 2 - 7, pinSize * 0.5);
+			pinCtx.lineTo(pinSize / 2, pinSize - 4);
+			pinCtx.lineTo(pinSize / 2 + 7, pinSize * 0.5);
+			pinCtx.fill();
+			// Inner dot
+			pinCtx.fillStyle = '#ffffff';
+			pinCtx.beginPath();
+			pinCtx.arc(pinSize / 2, pinSize * 0.38, 5, 0, Math.PI * 2);
+			pinCtx.fill();
+			map.addImage('destination-pin', {
+				width: pinSize,
+				height: pinSize,
+				data: new Uint8Array(pinCtx.getImageData(0, 0, pinSize, pinSize).data)
+			});
+
+			map.addLayer({
+				id: 'destination-marker',
+				type: 'symbol',
+				source: 'destination',
+				layout: {
+					'icon-image': 'destination-pin',
+					'icon-size': 0.9,
+					'icon-anchor': 'bottom',
+					'icon-allow-overlap': true,
+					'icon-ignore-placement': true
+				}
+			});
+
+			map.addLayer({
+				id: 'destination-label',
+				type: 'symbol',
+				source: 'destination',
+				layout: {
+					'text-field': ['get', 'label'],
+					'text-size': 13,
+					'text-font': ['Noto Sans Bold'],
+					'text-offset': [0, 0.8],
+					'text-anchor': 'top',
+					'text-allow-overlap': false,
+					'text-max-width': 14
+				},
+				paint: {
+					'text-color': '#ffffff',
+					'text-halo-color': 'rgba(0,0,0,0.8)',
+					'text-halo-width': 1.5
+				}
+			});
+
 			// Lancer GPS + chargement des radars
 			startGps();
 			loadStaticRadars();
@@ -308,11 +385,36 @@
 			showStaleWarning = stale;
 		});
 
+		// ── Souscription destination ──
+		const unsubDest = destination.subscribe(($dest) => {
+			if (!map || !map.getSource('destination')) return;
+
+			if ($dest) {
+				(map.getSource('destination') as any).setData({
+					type: 'FeatureCollection',
+					features: [{
+						type: 'Feature',
+						geometry: { type: 'Point', coordinates: [$dest.lng, $dest.lat] },
+						properties: { label: $dest.label }
+					}]
+				});
+
+				// Fly to destination without disabling follow mode
+				map.flyTo({ center: [$dest.lng, $dest.lat], zoom: 14, duration: 1500 });
+			} else {
+				(map.getSource('destination') as any).setData({
+					type: 'FeatureCollection',
+					features: []
+				});
+			}
+		});
+
 		// Store unsub for cleanup
 		const origDestroy = unsubPosition;
 		unsubPosition = () => {
 			origDestroy?.();
 			unsubStale();
+			unsubDest();
 		};
 	});
 
