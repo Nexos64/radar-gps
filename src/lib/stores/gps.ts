@@ -21,6 +21,29 @@ const WEAK_ACCURACY_M = 50;
 
 export const position = writable<GpsPosition | null>(null);
 export const gpsSignal = writable<GpsSignal>('off');
+export const compassHeading = writable<number | null>(null);
+
+let compassListener: ((e: DeviceOrientationEvent) => void) | null = null;
+
+function startCompass() {
+	if (compassListener) return;
+	compassListener = (e: DeviceOrientationEvent) => {
+		// iOS uses webkitCompassHeading (0-360, 0=North)
+		const heading = (e as any).webkitCompassHeading ?? (e.alpha != null ? (360 - e.alpha) % 360 : null);
+		if (heading != null) compassHeading.set(heading);
+	};
+	window.addEventListener('deviceorientationabsolute', compassListener as any, true);
+	// Fallback for browsers that don't support 'deviceorientationabsolute'
+	window.addEventListener('deviceorientation', compassListener, true);
+}
+
+function stopCompass() {
+	if (!compassListener) return;
+	window.removeEventListener('deviceorientationabsolute', compassListener as any, true);
+	window.removeEventListener('deviceorientation', compassListener, true);
+	compassListener = null;
+	compassHeading.set(null);
+}
 
 let watchId: number | null = null;
 let lastUpdate = 0;
@@ -133,6 +156,7 @@ export function startGps() {
 	gpsSignal.set('weak');
 	kalman.reset();
 	resetLostTimer();
+	startCompass();
 
 	watchId = navigator.geolocation.watchPosition(onPosition, onError, {
 		enableHighAccuracy: true,
@@ -148,6 +172,7 @@ export function stopGps() {
 	}
 	if (lostTimer) clearTimeout(lostTimer);
 	stopTunnelExtrapolation();
+	stopCompass();
 	kalman.reset();
 	lastPos = null;
 	lastUpdate = 0;

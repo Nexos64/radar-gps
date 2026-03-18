@@ -2,7 +2,7 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { get } from 'svelte/store';
 	import { PROTOMAPS_API_KEY, TOMTOM_API_KEY, MAP_CENTER, MAP_ZOOM, RADAR_VIEW_RADIUS_M, FREE_TILT_SPEED_MS, FREE_TILT_PITCH } from '$lib/config';
-	import { position, startGps, stopGps } from '$lib/stores/gps';
+	import { position, startGps, stopGps, compassHeading } from '$lib/stores/gps';
 	import { radars, loadStaticRadars, startWazePolling, stopWazePolling, setWazeBbox, loadRadarsForView, luftopStale } from '$lib/stores/radars';
 	import { evaluateAlerts, resetAlerts } from '$lib/stores/alerts';
 	import { destination } from '$lib/stores/destination';
@@ -138,10 +138,54 @@
 	onMount(async () => {
 		const maplibregl = await import('maplibre-gl');
 		const { Protocol } = await import('pmtiles');
-		const { layersWithCustomTheme, namedTheme } = await import('protomaps-themes-base');
+		const { layersWithPartialCustomTheme } = await import('protomaps-themes-base');
 
 		const protocol = new Protocol();
 		maplibregl.addProtocol('pmtiles', protocol.tile);
+
+		// Scale line-width values by a factor (handles numbers and interpolate expressions)
+		function scaleLineWidth(w: any, factor: number): any {
+			if (typeof w === 'number') return w * factor;
+			if (!Array.isArray(w)) return w;
+			// MapLibre interpolate expression: ['interpolate', interp, input, stop1, val1, ...]
+			if (w[0] === 'interpolate' || w[0] === 'interpolate-hcl') {
+				return w.map((v: any, i: number) => {
+					// Values are at odd indices starting from index 4 (stop, val pairs)
+					if (i >= 4 && i % 2 === 0) return typeof v === 'number' ? v * factor : v;
+					return v;
+				});
+			}
+			return w;
+		}
+
+		const baseLayers = layersWithPartialCustomTheme('protomaps', 'dark', {
+			// Uniformiser les labels — même couleur que roads_label_major (#666666)
+			city_label: '#666666',
+			city_label_halo: '#1f1f1f',
+			state_label: '#666666',
+			state_label_halo: '#1f1f1f',
+			country_label: '#666666',
+			subplace_label: '#666666',
+			subplace_label_halo: '#1f1f1f',
+			address_label: '#666666',
+			address_label_halo: '#1f1f1f',
+			ocean_label: '#666666',
+			peak_label: '#666666',
+			waterway_label: '#666666',
+			// Bâtiments moins sombres
+			buildings: '#222222',
+		}, 'fr');
+
+		// Épaissir les routes
+		const mapLayers = baseLayers.map((layer: any) => {
+			if (layer.type === 'line' && layer.paint && 'line-width' in layer.paint) {
+				const isRoad = /highway|major|minor|link|other|service|bridges/.test(layer.id);
+				if (isRoad) {
+					layer = { ...layer, paint: { ...layer.paint, 'line-width': scaleLineWidth(layer.paint['line-width'], 1.4) } };
+				}
+			}
+			return layer;
+		});
 
 		map = new maplibregl.Map({
 			container,
@@ -155,7 +199,7 @@
 						attribution: '© <a href="https://protomaps.com">Protomaps</a> © <a href="https://openstreetmap.org">OpenStreetMap</a>'
 					}
 				},
-				layers: layersWithCustomTheme('protomaps', namedTheme('dark'), 'fr')
+				layers: mapLayers
 			},
 			center: MAP_CENTER,
 			zoom: MAP_ZOOM,
@@ -187,21 +231,89 @@
 			// ── Register radar icons ──
 			registerRadarIcons(map);
 
-			// ── User heading arrow icon ──
-			const arrowSize = 32;
-			const canvas = document.createElement('canvas');
-			canvas.width = arrowSize;
-			canvas.height = arrowSize;
-			const ctx = canvas.getContext('2d')!;
-			ctx.fillStyle = '#4285F4';
-			ctx.beginPath();
-			ctx.moveTo(arrowSize / 2, 0);
-			ctx.lineTo(arrowSize, arrowSize);
-			ctx.lineTo(arrowSize / 2, arrowSize * 0.7);
-			ctx.lineTo(0, arrowSize);
-			ctx.closePath();
-			ctx.fill();
-			map.addImage('heading-arrow', { width: arrowSize, height: arrowSize, data: new Uint8Array(ctx.getImageData(0, 0, arrowSize, arrowSize).data) });
+			// ── Navigation arrow icon (moving) ──
+			{
+				const s = 64;
+				const c = document.createElement('canvas');
+				c.width = s; c.height = s;
+				const ctx = c.getContext('2d')!;
+				const cx = s / 2, cy = s / 2;
+
+				// Shadow
+				ctx.save();
+				ctx.shadowColor = 'rgba(0,0,0,0.35)';
+				ctx.shadowBlur = 6;
+				ctx.shadowOffsetY = 2;
+
+				// Main arrow shape — sleek navigation chevron
+				ctx.beginPath();
+				ctx.moveTo(cx, 6);          // top point
+				ctx.lineTo(cx + 20, 52);    // bottom right
+				ctx.lineTo(cx, 40);         // center notch
+				ctx.lineTo(cx - 20, 52);    // bottom left
+				ctx.closePath();
+				ctx.fillStyle = '#4285F4';
+				ctx.fill();
+				ctx.restore();
+
+				// White border
+				ctx.strokeStyle = '#ffffff';
+				ctx.lineWidth = 2.5;
+				ctx.lineJoin = 'round';
+				ctx.beginPath();
+				ctx.moveTo(cx, 6);
+				ctx.lineTo(cx + 20, 52);
+				ctx.lineTo(cx, 40);
+				ctx.lineTo(cx - 20, 52);
+				ctx.closePath();
+				ctx.stroke();
+
+				map.addImage('nav-arrow', { width: s, height: s, data: new Uint8Array(ctx.getImageData(0, 0, s, s).data) });
+			}
+
+			// ── Compass dot icon (stationary) ──
+			{
+				const s = 64;
+				const c = document.createElement('canvas');
+				c.width = s; c.height = s;
+				const ctx = c.getContext('2d')!;
+				const cx = s / 2, cy = s / 2;
+				const r = 18;
+
+				// Shadow
+				ctx.save();
+				ctx.shadowColor = 'rgba(0,0,0,0.3)';
+				ctx.shadowBlur = 5;
+				ctx.shadowOffsetY = 1;
+
+				// Blue circle
+				ctx.beginPath();
+				ctx.arc(cx, cy, r, 0, Math.PI * 2);
+				ctx.fillStyle = '#4285F4';
+				ctx.fill();
+				ctx.restore();
+
+				// White border
+				ctx.strokeStyle = '#ffffff';
+				ctx.lineWidth = 3;
+				ctx.beginPath();
+				ctx.arc(cx, cy, r, 0, Math.PI * 2);
+				ctx.stroke();
+
+				// North indicator — small red/orange triangle at top
+				ctx.fillStyle = '#FF5252';
+				ctx.beginPath();
+				ctx.moveTo(cx, cy - r - 5);      // tip above circle
+				ctx.lineTo(cx - 5, cy - r + 4);   // bottom left
+				ctx.lineTo(cx + 5, cy - r + 4);   // bottom right
+				ctx.closePath();
+				ctx.fill();
+				ctx.strokeStyle = '#ffffff';
+				ctx.lineWidth = 1.5;
+				ctx.stroke();
+
+				map.addImage('compass-dot', { width: s, height: s, data: new Uint8Array(ctx.getImageData(0, 0, s, s).data) });
+			}
 
 			// ── Route polyline ──
 			map.addSource('route', {
@@ -255,30 +367,16 @@
 			});
 
 			map.addLayer({
-				id: 'user-dot',
-				type: 'circle',
-				source: 'user-position',
-				paint: {
-					'circle-radius': 8,
-					'circle-color': '#4285F4',
-					'circle-stroke-color': '#ffffff',
-					'circle-stroke-width': 2.5,
-					'circle-pitch-alignment': 'map'
-				}
-			});
-
-			map.addLayer({
-				id: 'user-heading',
+				id: 'user-marker',
 				type: 'symbol',
 				source: 'user-position',
-				filter: ['has', 'heading'],
 				layout: {
-					'icon-image': 'heading-arrow',
-					'icon-size': 0.5,
-					'icon-rotate': ['get', 'heading'],
+					'icon-image': ['case', ['get', 'moving'], 'nav-arrow', 'compass-dot'],
+					'icon-size': 0.6,
+					'icon-rotate': ['get', 'rotation'],
 					'icon-rotation-alignment': 'map',
 					'icon-allow-overlap': true,
-					'icon-offset': [0, -30]
+					'icon-ignore-placement': true
 				}
 			});
 
@@ -418,13 +516,19 @@
 			const metersPerPixel = getMetersPerPixel($pos.lat, map.getZoom());
 			const accuracyRadius = Math.max($pos.accuracy / metersPerPixel, 4);
 			const hasHeading = $pos.heading != null && $pos.speed != null && $pos.speed > 1;
+			const compass = get(compassHeading);
+
+			// Determine marker mode and rotation
+			const moving = hasHeading;
+			const rotation = moving ? ($pos.heading ?? 0) : (compass ?? 0);
 
 			const feature: GeoJSON.Feature = {
 				type: 'Feature',
 				geometry: { type: 'Point', coordinates: [$pos.lng, $pos.lat] },
 				properties: {
 					accuracyRadius,
-					...(hasHeading ? { heading: $pos.heading } : {})
+					moving,
+					rotation
 				}
 			};
 
