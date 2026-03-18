@@ -1,4 +1,5 @@
 export const PROTOMAPS_API_KEY = '9a3b40d05d41740c';
+export const TOMTOM_API_KEY = 'fb4aWBVq9tSHrJfAJYXKfSSQF2IqpF7s';
 
 export const MAP_CENTER: [number, number] = [6.63, 46.54]; // Lausanne
 export const MAP_ZOOM = 10;
@@ -28,9 +29,6 @@ export function alertDistanceForSpeed(kmh: number): number {
 	return 1000;
 }
 
-/** Tolérance angulaire pour le filtre de cap (degrés) */
-export const HEADING_TOLERANCE_DEG = 45;
-
 /** Distance en dessous de laquelle on considère le radar "passé" */
 export const RADAR_PASSED_DISTANCE_M = 50;
 
@@ -39,3 +37,8 @@ export const SILENCE_AFTER_PASS_MS = 30_000; // 30 secondes
 
 /** Intervalle minimum entre deux alertes sonores pour le même radar (ms) */
 export const ALERT_REPEAT_INTERVAL_MS = 10_000; // 10 secondes
+
+// ── Free navigation tilt ──
+/** Vitesse minimale (m/s) pour activer le tilt en navigation libre */
+export const FREE_TILT_SPEED_MS = 2.8; // ~10 km/h
+export const FREE_TILT_PITCH = 45; // degrees

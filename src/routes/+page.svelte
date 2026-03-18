@@ -4,6 +4,8 @@
 	import Map from '$lib/components/Map.svelte';
 	import GpsIndicator from '$lib/components/GpsIndicator.svelte';
 	import RadarAlert from '$lib/components/RadarAlert.svelte';
+	import SpeedOverlay from '$lib/components/SpeedOverlay.svelte';
+	import RecenterButton from '$lib/components/RecenterButton.svelte';
 	import BottomSheet from '$lib/components/BottomSheet.svelte';
 	import SearchBar from '$lib/components/SearchBar.svelte';
 	import RoutePreview from '$lib/components/RoutePreview.svelte';
@@ -19,7 +21,9 @@
 	let audioUnlocked = false;
 	let sheetState: SheetState = 'closed';
 	let bottomSheet: BottomSheet;
+	let mapComponent: Map;
 	let routeError = '';
+	let mapNeedsRecenter = false;
 
 	$: isNavActive = $navInfo.state === 'navigating';
 	$: isPreviewActive = $navInfo.state === 'preview';
@@ -55,6 +59,10 @@
 		}
 	}
 
+	function handleRecenter() {
+		mapComponent?.recenter();
+	}
+
 	// When navigation stops, clear destination too
 	$: if ($navInfo.state === 'idle' && get(destination) !== null) {
 		// Don't clear on first mount — only when returning from nav/preview
@@ -71,15 +79,18 @@
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div on:click={handleInteraction} on:touchstart={handleInteraction}>
-	<Map />
+	<Map bind:this={mapComponent} bind:needsRecenter={mapNeedsRecenter} />
 
 	{#if !isNavActive}
 		<GpsIndicator />
 	{/if}
 
+	<SpeedOverlay />
 	<RadarAlert />
 	<TurnByTurn />
 	<RoutePreview />
+
+	<RecenterButton visible={mapNeedsRecenter} on:recenter={handleRecenter} />
 
 	{#if !hideSheet}
 		<BottomSheet bind:this={bottomSheet} bind:state={sheetState}>

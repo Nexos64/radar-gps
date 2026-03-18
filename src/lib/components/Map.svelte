@@ -1,12 +1,13 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
 	import { get } from 'svelte/store';
-	import { PROTOMAPS_API_KEY, MAP_CENTER, MAP_ZOOM, RADAR_VIEW_RADIUS_M } from '$lib/config';
+	import { PROTOMAPS_API_KEY, TOMTOM_API_KEY, MAP_CENTER, MAP_ZOOM, RADAR_VIEW_RADIUS_M, FREE_TILT_SPEED_MS, FREE_TILT_PITCH } from '$lib/config';
 	import { position, startGps, stopGps } from '$lib/stores/gps';
 	import { radars, loadStaticRadars, startWazePolling, stopWazePolling, setWazeBbox, loadRadarsForView, luftopStale } from '$lib/stores/radars';
 	import { evaluateAlerts, resetAlerts } from '$lib/stores/alerts';
 	import { destination } from '$lib/stores/destination';
 	import { navInfo, navStartTick, updateNavPosition, isOffRoute, getRouteRadars } from '$lib/stores/navigation';
+	import { updateSpeedLimit, resetSpeedLimit } from '$lib/stores/speedlimit';
 	import { registerRadarIcons } from './radar-icons';
 	import type { Radar } from '$lib/types';
 	import type { Map as MLMap } from 'maplibre-gl';
@@ -18,9 +19,25 @@
 	let cleanupFns: (() => void)[] = [];
 	let showStaleWarning = false;
 
+	/** Whether the recenter button should be visible (exported for parent) */
+	export let needsRecenter = false;
+
 	// ── Navigation tilt ──
-	const NAV_PITCH = 50; // degrees
-	const NAV_ZOOM_OFFSET = 1; // zoom in a bit more in nav mode
+	const NAV_PITCH = 50;
+	const NAV_ZOOM_OFFSET = 1;
+
+	/** Determine whether we should tilt the map based on speed/navigation */
+	function shouldTilt(speedMs: number | null, navigating: boolean): boolean {
+		if (navigating) return true;
+		// Free navigation: tilt when moving fast enough
+		return speedMs != null && speedMs >= FREE_TILT_SPEED_MS;
+	}
+
+	function getPitch(speedMs: number | null, navigating: boolean): number {
+		if (navigating) return NAV_PITCH;
+		if (speedMs != null && speedMs >= FREE_TILT_SPEED_MS) return FREE_TILT_PITCH;
+		return 0;
+	}
 
 	function zoomForSpeed(speedMs: number | null, navigating: boolean): number {
 		let base: number;
@@ -46,8 +63,6 @@
 					id: r.id,
 					type: r.type,
 					speedLimit: r.speedLimit,
-					angle: r.angle,
-					bidirectional: r.bidirectional,
 					source: r.source,
 					icon: `radar-${r.type}`
 				}
@@ -101,6 +116,25 @@
 		refreshDebounce = setTimeout(() => refreshVisibleRadars(pos), 300);
 	}
 
+	/** Recenter on user — exposed for external use */
+	export function recenter() {
+		followMode = true;
+		needsRecenter = false;
+		const pos = get(position);
+		if (pos && map) {
+			const nav = get(navInfo);
+			const navigating = nav.state === 'navigating';
+			map.easeTo({
+				center: [pos.lng, pos.lat],
+				zoom: zoomForSpeed(pos.speed, navigating),
+				bearing: (pos.heading != null && pos.speed != null && pos.speed > 1)
+					? pos.heading : map.getBearing(),
+				pitch: getPitch(pos.speed, navigating),
+				duration: 800
+			});
+		}
+	}
+
 	onMount(async () => {
 		const maplibregl = await import('maplibre-gl');
 		const { Protocol } = await import('pmtiles');
@@ -131,6 +165,25 @@
 		});
 
 		map.on('load', () => {
+			// ── TomTom Traffic Flow layer ──
+			map.addSource('tomtom-traffic', {
+				type: 'raster',
+				tiles: [
+					`https://api.tomtom.com/traffic/map/4/tile/flow/relative0/{z}/{x}/{y}.png?key=${TOMTOM_API_KEY}&tileSize=256&style=relative0-dark`
+				],
+				tileSize: 256,
+				attribution: '© <a href="https://www.tomtom.com">TomTom</a>'
+			});
+
+			map.addLayer({
+				id: 'traffic-flow',
+				type: 'raster',
+				source: 'tomtom-traffic',
+				paint: {
+					'raster-opacity': 0.6
+				}
+			});
+
 			// ── Register radar icons ──
 			registerRadarIcons(map);
 
@@ -156,7 +209,6 @@
 				data: { type: 'FeatureCollection', features: [] }
 			});
 
-			// Route outline (darker, wider)
 			map.addLayer({
 				id: 'route-outline',
 				type: 'line',
@@ -169,7 +221,6 @@
 				}
 			});
 
-			// Route main line
 			map.addLayer({
 				id: 'route-line',
 				type: 'line',
@@ -231,7 +282,7 @@
 				}
 			});
 
-			// ── Radars ──
+			// ── Radars (no direction arrows — bidirectional alert logic) ──
 			map.addSource('radars', {
 				type: 'geojson',
 				data: { type: 'FeatureCollection', features: [] }
@@ -246,12 +297,6 @@
 					'icon-size': 0.7,
 					'icon-allow-overlap': true,
 					'icon-ignore-placement': true,
-					'icon-rotate': [
-						'case',
-						['all', ['has', 'angle'], ['!', ['get', 'bidirectional']]],
-						['get', 'angle'],
-						0
-					],
 					'icon-rotation-alignment': 'map'
 				}
 			});
@@ -276,29 +321,12 @@
 				}
 			});
 
-			map.addLayer({
-				id: 'radar-direction',
-				type: 'symbol',
-				source: 'radars',
-				filter: ['all', ['has', 'angle'], ['!', ['get', 'bidirectional']]],
-				layout: {
-					'icon-image': 'radar-direction-arrow',
-					'icon-size': 0.5,
-					'icon-rotate': ['get', 'angle'],
-					'icon-rotation-alignment': 'map',
-					'icon-allow-overlap': true,
-					'icon-ignore-placement': true,
-					'icon-offset': [0, -35]
-				}
-			});
-
 			// ── Destination marker ──
 			map.addSource('destination', {
 				type: 'geojson',
 				data: { type: 'FeatureCollection', features: [] }
 			});
 
-			// Destination pin icon
 			const pinSize = 48;
 			const pinCanvas = document.createElement('canvas');
 			pinCanvas.width = pinSize;
@@ -371,7 +399,7 @@
 			startWazePolling();
 		});
 
-		map.on('dragstart', () => { followMode = false; });
+		map.on('dragstart', () => { followMode = false; needsRecenter = true; });
 		map.on('moveend', () => {
 			updateWazeBbox();
 			let currentPos: GpsPosition | null = null;
@@ -410,10 +438,13 @@
 					center: [$pos.lng, $pos.lat],
 					zoom: zoomForSpeed($pos.speed, navigating),
 					bearing: hasHeading ? $pos.heading! : map.getBearing(),
-					pitch: navigating ? NAV_PITCH : 0,
+					pitch: getPitch($pos.speed, navigating),
 					duration: 1000
 				});
 			}
+
+			// Update speed limit from OSM
+			updateSpeedLimit($pos.lat, $pos.lng);
 
 			// Refresh visible radars
 			debouncedRefresh($pos);
@@ -421,10 +452,8 @@
 			// Navigation tracking
 			if (navigating) {
 				updateNavPosition($pos);
-				// En navigation, alerter uniquement sur les radars de l'itinéraire
 				evaluateAlerts($pos, getRouteRadars());
 			} else {
-				// Hors navigation, alerter sur tous les radars visibles
 				evaluateAlerts($pos, get(radars));
 			}
 		});
@@ -467,8 +496,9 @@
 				(map.getSource('route') as any).setData(routeToGeoJson($nav.route.geometry));
 			} else {
 				(map.getSource('route') as any).setData({ type: 'FeatureCollection', features: [] });
-				// Reset pitch when leaving navigation
-				if (map.getPitch() > 0) {
+				// Reset pitch when leaving navigation (if stopped)
+				const pos = get(position);
+				if (map.getPitch() > 0 && (!pos || !pos.speed || pos.speed < FREE_TILT_SPEED_MS)) {
 					map.easeTo({ pitch: 0, duration: 500 });
 				}
 			}
@@ -481,6 +511,7 @@
 			if (tick > prevTick) {
 				prevTick = tick;
 				followMode = true;
+				needsRecenter = false;
 				const pos = get(position);
 				if (pos && map) {
 					map.easeTo({
@@ -503,6 +534,7 @@
 		stopGps();
 		stopWazePolling();
 		resetAlerts();
+		resetSpeedLimit();
 		if (refreshDebounce) clearTimeout(refreshDebounce);
 	});
 
@@ -510,9 +542,6 @@
 		return (40075016.686 * Math.cos(lat * Math.PI / 180)) / (512 * Math.pow(2, zoom));
 	}
 
-	export function recenter() {
-		followMode = true;
-	}
 </script>
 
 <div bind:this={container} class="map"></div>

@@ -1,20 +1,18 @@
 /**
- * Alert engine — détecte les radars à proximité selon la trajectoire GPS
+ * Alert engine — détecte les radars à proximité
  *
- * Logique :
- * 1. Pour chaque radar dans le rayon d'alerte (fonction de la vitesse) :
- *    - Si le radar est bidirectionnel ou sans angle → alerte toujours
- *    - Sinon : alerte seulement si le cap GPS est proche de la direction du radar (±45°)
- * 2. Zones de silence : après avoir dépassé un radar, pas d'alerte pendant 30s
- * 3. Pas de ré-alerte sonore pour un même radar pendant 10s
+ * Logique simplifiée :
+ * 1. Alerte toujours dans les deux sens, quelle que soit l'orientation du radar
+ * 2. Zones de silence après passage d'un radar (30s)
+ * 3. Dédoublonnage spatial : si deux radars sont < 100m, alerter qu'une seule fois
+ * 4. Pas de ré-alerte sonore pour un même radar pendant 10s
  */
 
-import { writable, get } from 'svelte/store';
+import { writable } from 'svelte/store';
 import type { Radar } from '$lib/types';
 import type { GpsPosition } from '$lib/stores/gps';
 import {
 	alertDistanceForSpeed,
-	HEADING_TOLERANCE_DEG,
 	RADAR_PASSED_DISTANCE_M,
 	SILENCE_AFTER_PASS_MS,
 	ALERT_REPEAT_INTERVAL_MS
@@ -45,6 +43,9 @@ const silencedRadars = new Map<string, number>(); // id → timestamp de passage
 /** Distance précédente par radar (pour détecter le passage) */
 const prevDistances = new Map<string, number>();
 
+/** Radars déjà alertés dans ce cycle (pour dédoublonnage spatial) */
+const alertedPositions: { lat: number; lng: number }[] = [];
+
 // ── Fonctions utilitaires ──
 
 function haversineM(lat1: number, lng1: number, lat2: number, lng2: number): number {
@@ -58,22 +59,7 @@ function haversineM(lat1: number, lng1: number, lat2: number, lng2: number): num
 	return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-/** Bearing from point A to point B (degrees, 0 = north) */
-function bearingDeg(lat1: number, lng1: number, lat2: number, lng2: number): number {
-	const dLng = (lng2 - lng1) * Math.PI / 180;
-	const la1 = lat1 * Math.PI / 180;
-	const la2 = lat2 * Math.PI / 180;
-	const y = Math.sin(dLng) * Math.cos(la2);
-	const x = Math.cos(la1) * Math.sin(la2) - Math.sin(la1) * Math.cos(la2) * Math.cos(dLng);
-	return ((Math.atan2(y, x) * 180 / Math.PI) + 360) % 360;
-}
-
-/** Angle difference, normalized to 0–180 */
-function angleDiff(a: number, b: number): number {
-	let d = Math.abs(a - b) % 360;
-	if (d > 180) d = 360 - d;
-	return d;
-}
+const DEDUP_DISTANCE_M = 100;
 
 // ── Nettoyage des silences expirés ──
 
@@ -92,9 +78,13 @@ function cleanSilenced() {
 /**
  * Évalue les alertes à chaque tick GPS.
  * Appelé depuis le composant Map à chaque mise à jour de position.
+ *
+ * Alerte toujours dans les deux sens. Dédoublonne les radars
+ * proches (< 100m) pour éviter les doubles alertes.
  */
 export function evaluateAlerts(pos: GpsPosition, radars: Radar[]): void {
 	cleanSilenced();
+	alertedPositions.length = 0;
 
 	const now = Date.now();
 	const speedKmh = (pos.speed ?? 0) * 3.6;
@@ -110,7 +100,6 @@ export function evaluateAlerts(pos: GpsPosition, radars: Radar[]): void {
 		prevDistances.set(radar.id, dist);
 
 		if (prevDist !== undefined && prevDist <= RADAR_PASSED_DISTANCE_M && dist > RADAR_PASSED_DISTANCE_M) {
-			// On vient de passer ce radar → zone de silence
 			silencedRadars.set(radar.id, now);
 			continue;
 		}
@@ -121,8 +110,14 @@ export function evaluateAlerts(pos: GpsPosition, radars: Radar[]): void {
 		// ── Skip si hors du rayon d'alerte ──
 		if (dist > alertRadius) continue;
 
-		// ── Filtre de trajectoire ──
-		if (!shouldAlert(pos, radar)) continue;
+		// ── Dédoublonnage spatial : skip si un radar déjà alerté est < 100m ──
+		const isDuplicate = alertedPositions.some(
+			(p) => haversineM(p.lat, p.lng, radar.lat, radar.lng) < DEDUP_DISTANCE_M
+		);
+		if (isDuplicate) continue;
+
+		// Marquer cette position comme alertée
+		alertedPositions.push({ lat: radar.lat, lng: radar.lng });
 
 		// ── Ce radar est en alerte — garder le plus proche ──
 		if (!closest || dist < closest.distanceM) {
@@ -140,35 +135,11 @@ export function evaluateAlerts(pos: GpsPosition, radars: Radar[]): void {
 	activeAlert.set(closest);
 }
 
-/**
- * Détermine si on doit alerter pour ce radar selon le cap GPS.
- *
- * - Radar bidirectionnel ou sans angle → toujours alerter
- * - Sinon : le cap GPS doit être dans ±HEADING_TOLERANCE de la direction du radar
- *   OU on se dirige vers le radar (bearing vers le radar ≈ cap GPS)
- */
-function shouldAlert(pos: GpsPosition, radar: Radar): boolean {
-	// Pas de cap GPS fiable (à l'arrêt) → alerter si proche
-	if (pos.heading == null || pos.speed == null || pos.speed < 1) return true;
-
-	// Radar bidirectionnel ou sans direction → alerter dans les deux sens
-	if (radar.bidirectional || radar.angle == null) return true;
-
-	// Le cap GPS doit être cohérent avec la direction du radar
-	// = on roule dans le même sens que ce que le radar surveille
-	if (angleDiff(pos.heading, radar.angle) <= HEADING_TOLERANCE_DEG) return true;
-
-	// Dernier check : on se dirige vers le radar ?
-	const bearingToRadar = bearingDeg(pos.lat, pos.lng, radar.lat, radar.lng);
-	if (angleDiff(pos.heading, bearingToRadar) <= HEADING_TOLERANCE_DEG) return true;
-
-	return false;
-}
-
 /** Reset all alert state (on GPS stop, etc.) */
 export function resetAlerts(): void {
 	activeAlert.set(null);
 	lastSoundAt.clear();
 	silencedRadars.clear();
 	prevDistances.clear();
+	alertedPositions.length = 0;
 }

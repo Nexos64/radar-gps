@@ -40,33 +40,8 @@ function renderRadarIcon(fill: string, symbol: string): ImageData {
 	return ctx.getImageData(0, 0, ICON_SIZE, ICON_SIZE);
 }
 
-/** Generate a direction arrow icon */
-function renderDirectionArrow(): ImageData {
-	const size = 24;
-	const canvas = document.createElement('canvas');
-	canvas.width = size;
-	canvas.height = size;
-	const ctx = canvas.getContext('2d')!;
-
-	ctx.fillStyle = '#ffffff';
-	ctx.beginPath();
-	ctx.moveTo(size / 2, 0);
-	ctx.lineTo(size, size);
-	ctx.lineTo(size / 2, size * 0.65);
-	ctx.lineTo(0, size);
-	ctx.closePath();
-	ctx.fill();
-
-	ctx.strokeStyle = 'rgba(0,0,0,0.3)';
-	ctx.lineWidth = 1;
-	ctx.stroke();
-
-	return ctx.getImageData(0, 0, size, size);
-}
-
 /** Register all radar icons on the map */
 export function registerRadarIcons(map: MLMap) {
-	// Radar type icons
 	for (const [type, config] of Object.entries(ICON_CONFIG)) {
 		const imgData = renderRadarIcon(config.fill, config.symbol);
 		map.addImage(`radar-${type}`, {
@@ -75,14 +50,6 @@ export function registerRadarIcons(map: MLMap) {
 			data: new Uint8Array(imgData.data)
 		});
 	}
-
-	// Direction arrow
-	const arrow = renderDirectionArrow();
-	map.addImage('radar-direction-arrow', {
-		width: 24,
-		height: 24,
-		data: new Uint8Array(arrow.data)
-	});
 }
 
 /** Get the MapLibre image name for a radar type */

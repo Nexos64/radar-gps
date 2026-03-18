@@ -1,4 +1,5 @@
 import { writable, derived } from 'svelte/store';
+import { GpsKalman } from './kalman';
 
 export interface GpsPosition {
 	lat: number;
@@ -7,6 +8,8 @@ export interface GpsPosition {
 	heading: number | null;
 	speed: number | null; // m/s
 	timestamp: number;
+	/** true si la position est extrapolée (tunnel) */
+	extrapolated?: boolean;
 }
 
 export type GpsSignal = 'strong' | 'weak' | 'lost' | 'off';
@@ -23,6 +26,9 @@ let watchId: number | null = null;
 let lastUpdate = 0;
 let lastPos: GpsPosition | null = null;
 let lostTimer: ReturnType<typeof setTimeout> | null = null;
+let tunnelInterval: ReturnType<typeof setInterval> | null = null;
+
+const kalman = new GpsKalman();
 
 function distanceM(a: GpsPosition, b: GpsPosition): number {
 	const R = 6_371_000;
@@ -37,16 +43,59 @@ function distanceM(a: GpsPosition, b: GpsPosition): number {
 
 function resetLostTimer() {
 	if (lostTimer) clearTimeout(lostTimer);
-	lostTimer = setTimeout(() => gpsSignal.set('lost'), LOST_TIMEOUT_MS);
+	lostTimer = setTimeout(() => {
+		gpsSignal.set('lost');
+		// Enter tunnel mode — extrapolate position
+		startTunnelExtrapolation();
+	}, LOST_TIMEOUT_MS);
+}
+
+function startTunnelExtrapolation() {
+	if (tunnelInterval) return;
+	kalman.enterTunnel();
+	let elapsed = 0;
+
+	tunnelInterval = setInterval(() => {
+		elapsed += 1000;
+		const extrapolated = kalman.extrapolateInTunnel(elapsed);
+		if (!extrapolated) {
+			stopTunnelExtrapolation();
+			return;
+		}
+		position.set({
+			lat: extrapolated.lat,
+			lng: extrapolated.lng,
+			accuracy: 999, // unknown in tunnel
+			heading: lastPos?.heading ?? null,
+			speed: lastPos?.speed ?? null,
+			timestamp: Date.now(),
+			extrapolated: true
+		});
+	}, 1000);
+}
+
+function stopTunnelExtrapolation() {
+	if (tunnelInterval) {
+		clearInterval(tunnelInterval);
+		tunnelInterval = null;
+	}
 }
 
 function onPosition(geo: GeolocationPosition) {
 	const now = Date.now();
 	if (now - lastUpdate < THROTTLE_MS) return;
 
+	// Kalman filter the position
+	const filtered = kalman.filter(
+		geo.coords.latitude,
+		geo.coords.longitude,
+		geo.coords.accuracy,
+		geo.timestamp
+	);
+
 	const pos: GpsPosition = {
-		lat: geo.coords.latitude,
-		lng: geo.coords.longitude,
+		lat: filtered.lat,
+		lng: filtered.lng,
 		accuracy: geo.coords.accuracy,
 		heading: geo.coords.heading,
 		speed: geo.coords.speed,
@@ -54,6 +103,12 @@ function onPosition(geo: GeolocationPosition) {
 	};
 
 	if (lastPos && distanceM(lastPos, pos) < MIN_DISTANCE_M) return;
+
+	// Store for tunnel extrapolation
+	kalman.setLastValid(filtered.lat, filtered.lng, geo.coords.heading, geo.coords.speed);
+
+	// Stop tunnel mode if active
+	stopTunnelExtrapolation();
 
 	lastUpdate = now;
 	lastPos = pos;
@@ -65,6 +120,7 @@ function onPosition(geo: GeolocationPosition) {
 function onError(err: GeolocationPositionError) {
 	console.warn('GPS error:', err.message);
 	gpsSignal.set('lost');
+	startTunnelExtrapolation();
 }
 
 export function startGps() {
@@ -75,6 +131,7 @@ export function startGps() {
 	}
 
 	gpsSignal.set('weak');
+	kalman.reset();
 	resetLostTimer();
 
 	watchId = navigator.geolocation.watchPosition(onPosition, onError, {
@@ -90,6 +147,8 @@ export function stopGps() {
 		watchId = null;
 	}
 	if (lostTimer) clearTimeout(lostTimer);
+	stopTunnelExtrapolation();
+	kalman.reset();
 	lastPos = null;
 	lastUpdate = 0;
 	position.set(null);
