@@ -18,3 +18,24 @@ export const TTL = {
 };
 
 export const RADAR_VIEW_RADIUS_M = 15_000; // 15 km
+
+// ── Alert engine ──
+/** Distance d'alerte en fonction de la vitesse (km/h → mètres) */
+export function alertDistanceForSpeed(kmh: number): number {
+	if (kmh <= 50) return 300;
+	if (kmh <= 90) return 600;
+	if (kmh <= 110) return 800;
+	return 1000;
+}
+
+/** Tolérance angulaire pour le filtre de cap (degrés) */
+export const HEADING_TOLERANCE_DEG = 45;
+
+/** Distance en dessous de laquelle on considère le radar "passé" */
+export const RADAR_PASSED_DISTANCE_M = 50;
+
+/** Durée de silence après passage d'un radar (ms) */
+export const SILENCE_AFTER_PASS_MS = 30_000; // 30 secondes
+
+/** Intervalle minimum entre deux alertes sonores pour le même radar (ms) */
+export const ALERT_REPEAT_INTERVAL_MS = 10_000; // 10 secondes

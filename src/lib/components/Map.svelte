@@ -1,8 +1,10 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
+	import { get } from 'svelte/store';
 	import { PROTOMAPS_API_KEY, MAP_CENTER, MAP_ZOOM, RADAR_VIEW_RADIUS_M } from '$lib/config';
 	import { position, startGps, stopGps } from '$lib/stores/gps';
-	import { loadStaticRadars, startWazePolling, stopWazePolling, setWazeBbox, loadRadarsForView, luftopStale } from '$lib/stores/radars';
+	import { radars, loadStaticRadars, startWazePolling, stopWazePolling, setWazeBbox, loadRadarsForView, luftopStale } from '$lib/stores/radars';
+	import { evaluateAlerts, resetAlerts } from '$lib/stores/alerts';
 	import { registerRadarIcons } from './radar-icons';
 	import type { Radar } from '$lib/types';
 	import type { Map as MLMap } from 'maplibre-gl';
@@ -70,9 +72,7 @@
 		// Update the GeoJSON source
 		const src = map.getSource('radars');
 		if (src) {
-			const { get } = await import('svelte/store');
-			const { radars: radarStore } = await import('$lib/stores/radars');
-			const currentRadars = get(radarStore);
+			const currentRadars = get(radars);
 			(src as any).setData(radarsToGeoJson(currentRadars));
 		}
 	}
@@ -298,6 +298,9 @@
 
 			// Refresh visible radars when position changes
 			debouncedRefresh($pos);
+
+			// Évaluer les alertes radar
+			evaluateAlerts($pos, get(radars));
 		});
 
 		// ── Souscription Luftop stale ──
@@ -317,6 +320,7 @@
 		unsubPosition?.();
 		stopGps();
 		stopWazePolling();
+		resetAlerts();
 		if (refreshDebounce) clearTimeout(refreshDebounce);
 	});
 
