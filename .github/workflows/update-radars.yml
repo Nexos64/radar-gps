@@ -1,0 +1,29 @@
+name: Update Luftop radars
+
+on:
+  schedule:
+    - cron: '0 3 * * 0'  # Dimanche à 3h UTC
+  workflow_dispatch:       # Lancement manuel
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Fetch Luftop radars
+        env:
+          LUFTOP_API_KEY: ${{ secrets.LUFTOP_API_KEY }}
+        run: node scripts/fetch-luftop.js
+
+      - name: Commit & push if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add static/data/radars-luftop.json
+          git diff --staged --quiet || git commit -m "chore: update Luftop radar data"
+          git push
