@@ -1,4 +1,3 @@
-import { BBOX } from '$lib/config';
 import type { Radar } from '$lib/types';
 
 const OVERPASS_SERVERS = [
@@ -7,24 +6,26 @@ const OVERPASS_SERVERS = [
 	'https://maps.mail.ru/osm/tools/overpass/api/interpreter'
 ];
 
-/**
- * Split the big FR+CH+DE bbox into smaller regional chunks
- * to avoid Overpass timeout on large queries.
- */
-function getRegionalBboxes(): string[] {
-	// Split into ~6 regions to keep each query manageable
-	const { south, north, west, east } = BBOX;
-	const midLat = (south + north) / 2;
-	const thirds = [west, (west + east) / 3, (2 * (west + east)) / 3, east];
+/** Country bounding boxes */
+export const COUNTRY_BBOXES: Record<string, { south: number; north: number; west: number; east: number }> = {
+	fr: { south: 41.3, north: 51.1, west: -5.2, east: 9.6 },
+	ch: { south: 45.8, north: 47.9, west: 5.9, east: 10.5 },
+	de: { south: 47.3, north: 55.1, west: 5.9, east: 15.1 }
+};
 
-	const bboxes: string[] = [];
-	for (let i = 0; i < thirds.length - 1; i++) {
-		// Bottom half
-		bboxes.push(`${south},${thirds[i]},${midLat},${thirds[i + 1]}`);
-		// Top half
-		bboxes.push(`${midLat},${thirds[i]},${north},${thirds[i + 1]}`);
+/**
+ * Detect which countries the user is currently in based on GPS coordinates.
+ * Returns an array of country codes.
+ */
+export function detectCountries(lat: number, lng: number): string[] {
+	const countries: string[] = [];
+	for (const [code, bbox] of Object.entries(COUNTRY_BBOXES)) {
+		if (lat >= bbox.south && lat <= bbox.north && lng >= bbox.west && lng <= bbox.east) {
+			countries.push(code);
+		}
 	}
-	return bboxes;
+	// Default: FR + CH if not in any known country
+	return countries.length > 0 ? countries : ['fr', 'ch'];
 }
 
 function buildQuery(bbox: string): string {
@@ -77,7 +78,7 @@ async function queryOverpass(query: string): Promise<any> {
 
 			if (res.status === 429 || res.status === 504) {
 				lastError = `${server} returned ${res.status}`;
-				continue; // Try next server
+				continue;
 			}
 
 			if (!res.ok) {
@@ -95,15 +96,22 @@ async function queryOverpass(query: string): Promise<any> {
 	throw new Error(`All Overpass servers failed: ${lastError}`);
 }
 
-export async function fetchOsmRadars(): Promise<Radar[]> {
-	const bboxes = getRegionalBboxes();
+/**
+ * Fetch OSM radars for specific countries.
+ * @param countries Array of country codes (e.g. ['fr', 'ch'])
+ */
+export async function fetchOsmRadars(countries?: string[]): Promise<Radar[]> {
+	const countriesToLoad = countries ?? ['fr', 'ch'];
 	const seenIds = new Set<string>();
 	const allRadars: Radar[] = [];
 
-	// Fetch each regional chunk (sequentially to avoid rate limits)
-	for (const bbox of bboxes) {
+	for (const country of countriesToLoad) {
+		const bbox = COUNTRY_BBOXES[country];
+		if (!bbox) continue;
+
 		try {
-			const query = buildQuery(bbox);
+			const bboxStr = `${bbox.south},${bbox.west},${bbox.north},${bbox.east}`;
+			const query = buildQuery(bboxStr);
 			const data = await queryOverpass(query);
 
 			if (!data.elements) continue;
@@ -126,16 +134,15 @@ export async function fetchOsmRadars(): Promise<Radar[]> {
 				});
 			}
 
-			// Small delay between chunks to be polite to the server
-			if (bboxes.indexOf(bbox) < bboxes.length - 1) {
+			// Small delay between countries to be polite to the server
+			if (countriesToLoad.indexOf(country) < countriesToLoad.length - 1) {
 				await new Promise((r) => setTimeout(r, 2000));
 			}
 		} catch (e) {
-			console.warn(`[OSM] Failed to fetch bbox ${bbox}:`, e);
-			// Continue with other chunks even if one fails
+			console.warn(`[OSM] Failed to fetch ${country}:`, e);
 		}
 	}
 
-	console.log(`[OSM] Total radars fetched: ${allRadars.length}`);
+	console.log(`[OSM] Total radars fetched for [${countriesToLoad.join(',')}]: ${allRadars.length}`);
 	return allRadars;
 }

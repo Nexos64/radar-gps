@@ -2,30 +2,36 @@
 	import { speedKmh } from '$lib/stores/gps';
 	import { currentSpeedLimit } from '$lib/stores/speedlimit';
 
+	/** Bottom offset in pixels (controlled by parent based on bottom sheet) */
+	export let bottomPx = 96;
+	/** Whether the overlay is visible */
+	export let visible = true;
+
 	$: over = $currentSpeedLimit != null && $speedKmh != null && $speedKmh > $currentSpeedLimit;
 </script>
 
-<div class="speed-overlay">
-	<!-- Vitesse actuelle -->
-	<div class="speed-current" class:over>
-		<span class="speed-value">{$speedKmh ?? '—'}</span>
-		<span class="speed-unit">km/h</span>
-	</div>
-
-	<!-- Limitation de vitesse -->
-	{#if $currentSpeedLimit != null}
-		<div class="speed-limit">
-			<div class="limit-sign">
-				<span class="limit-value">{$currentSpeedLimit}</span>
-			</div>
+{#if visible}
+	<div class="speed-overlay" style="bottom: {bottomPx}px;">
+		<!-- Vitesse actuelle -->
+		<div class="speed-current" class:over>
+			<span class="speed-value">{$speedKmh ?? '—'}</span>
+			<span class="speed-unit">km/h</span>
 		</div>
-	{/if}
-</div>
+
+		<!-- Limitation de vitesse -->
+		{#if $currentSpeedLimit != null}
+			<div class="speed-limit">
+				<div class="limit-sign">
+					<span class="limit-value">{$currentSpeedLimit}</span>
+				</div>
+			</div>
+		{/if}
+	</div>
+{/if}
 
 <style>
 	.speed-overlay {
 		position: fixed;
-		bottom: calc(env(safe-area-inset-bottom, 16px) + 80px);
 		left: 14px;
 		z-index: 25;
 		display: flex;
@@ -33,6 +39,7 @@
 		align-items: center;
 		gap: 8px;
 		pointer-events: none;
+		transition: bottom 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease;
 	}
 
 	.speed-current {

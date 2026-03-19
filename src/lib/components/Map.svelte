@@ -3,7 +3,7 @@
 	import { get } from 'svelte/store';
 	import { PROTOMAPS_API_KEY, TOMTOM_API_KEY, MAP_CENTER, MAP_ZOOM, RADAR_VIEW_RADIUS_M, FREE_TILT_SPEED_MS, FREE_TILT_PITCH } from '$lib/config';
 	import { position, startGps, stopGps, compassHeading } from '$lib/stores/gps';
-	import { radars, loadStaticRadars, startWazePolling, stopWazePolling, setWazeBbox, loadRadarsForView, luftopStale } from '$lib/stores/radars';
+	import { radars, loadStaticRadars, startWazePolling, stopWazePolling, setWazeBbox, loadRadarsForView, luftopStale, checkCountryExpansion } from '$lib/stores/radars';
 	import { evaluateAlerts, resetAlerts } from '$lib/stores/alerts';
 	import { destination } from '$lib/stores/destination';
 	import { navInfo, navStartTick, updateNavPosition, isOffRoute, getRouteRadars } from '$lib/stores/navigation';
@@ -209,11 +209,12 @@
 		});
 
 		map.on('load', () => {
-			// ── TomTom Traffic Flow layer ──
+			// ── TomTom Traffic Flow layer (15-min cache via epoch bucket) ──
+			const trafficEpoch = Math.floor(Date.now() / (15 * 60 * 1000));
 			map.addSource('tomtom-traffic', {
 				type: 'raster',
 				tiles: [
-					`https://api.tomtom.com/traffic/map/4/tile/flow/relative-delay/{z}/{x}/{y}.png?key=${TOMTOM_API_KEY}&tileSize=256&style=relative-delay-dark`
+					`https://api.tomtom.com/traffic/map/4/tile/flow/relative-delay/{z}/{x}/{y}.png?key=${TOMTOM_API_KEY}&tileSize=256&style=relative-delay-dark&t=${trafficEpoch}`
 				],
 				tileSize: 256,
 				attribution: '© <a href="https://www.tomtom.com">TomTom</a>'
@@ -526,8 +527,11 @@
 				});
 			}
 
-			// Update speed limit from OSM
+			// Update speed limit
 			updateSpeedLimit($pos.lat, $pos.lng);
+
+			// Check if user crossed into a new country (lazy OSM expansion)
+			checkCountryExpansion($pos.lat, $pos.lng);
 
 			// Refresh visible radars
 			debouncedRefresh($pos);
@@ -535,9 +539,9 @@
 			// Navigation tracking
 			if (navigating) {
 				updateNavPosition($pos);
-				evaluateAlerts($pos, getRouteRadars());
+				evaluateAlerts($pos, getRouteRadars(), true);
 			} else {
-				evaluateAlerts($pos, get(radars));
+				evaluateAlerts($pos, get(radars), false);
 			}
 		});
 		cleanupFns.push(unsubPosition);

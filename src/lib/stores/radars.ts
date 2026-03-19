@@ -3,7 +3,7 @@ import { TTL } from '$lib/config';
 import type { Radar } from '$lib/types';
 import { getLastFetch, setLastFetch, storeRadars, getAllRadars, getRadarsInView } from './radardb';
 import { fetchLuftopRadars } from '$lib/sources/luftop';
-import { fetchOsmRadars } from '$lib/sources/overpass';
+import { fetchOsmRadars, detectCountries } from '$lib/sources/overpass';
 import { fetchWazeAlerts } from '$lib/sources/waze';
 import { logError } from './errorlog';
 
@@ -13,6 +13,9 @@ export const luftopStale = writable(false);
 
 let wazeInterval: ReturnType<typeof setInterval> | null = null;
 let mapBbox: { top: number; bottom: number; left: number; right: number } | null = null;
+
+/** Countries currently loaded for OSM radars */
+let loadedOsmCountries: Set<string> = new Set();
 
 async function refreshSource(
 	source: string,
@@ -66,10 +69,14 @@ export async function loadStaticRadars() {
 	await updateStore();
 	await checkLuftopStale();
 
+	// Default: load FR + CH
+	const defaultCountries = ['fr', 'ch'];
+	loadedOsmCountries = new Set(defaultCountries);
+
 	// Refresh expired sources in parallel
 	const [luftopChanged, osmChanged] = await Promise.all([
 		refreshSource('luftop', TTL.LUFTOP, fetchLuftopRadars),
-		refreshSource('osm', TTL.OSM, fetchOsmRadars)
+		refreshSource('osm', TTL.OSM, () => fetchOsmRadars(defaultCountries))
 	]);
 
 	if (luftopChanged || osmChanged) {
@@ -78,6 +85,41 @@ export async function loadStaticRadars() {
 
 	await checkLuftopStale();
 	radarLoading.set(false);
+}
+
+/**
+ * Check if user crossed into a new country and load additional OSM radars.
+ * Call on GPS updates.
+ */
+export async function checkCountryExpansion(lat: number, lng: number): Promise<void> {
+	const userCountries = detectCountries(lat, lng);
+	const newCountries = userCountries.filter((c) => !loadedOsmCountries.has(c));
+
+	if (newCountries.length === 0) return;
+
+	console.log(`[radars] User crossed into new country: ${newCountries.join(', ')} — loading OSM radars`);
+
+	for (const c of newCountries) {
+		loadedOsmCountries.add(c);
+	}
+
+	try {
+		// Fetch only the new countries
+		const newRadars = await fetchOsmRadars(newCountries);
+		if (newRadars.length > 0) {
+			// Get existing OSM radars and merge
+			const { getRadarsBySource } = await import('./radardb');
+			const existing = await getRadarsBySource('osm');
+			const merged = [...existing, ...newRadars];
+			await storeRadars('osm', merged);
+			await setLastFetch('osm');
+			await updateStore();
+			console.log(`[radars] Added ${newRadars.length} OSM radars from ${newCountries.join(',')}`);
+		}
+	} catch (e) {
+		const msg = e instanceof Error ? e.message : String(e);
+		logError('radars/osm-expansion', msg);
+	}
 }
 
 /** Start periodic Waze polling based on current map viewport */

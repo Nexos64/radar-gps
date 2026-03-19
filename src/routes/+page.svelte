@@ -23,16 +23,23 @@
 
 	let audioUnlocked = false;
 	let sheetState: SheetState = 'closed';
+	let sheetTopPx = 0;
 	let bottomSheet: BottomSheet;
 	let mapComponent: Map;
 	let routeError = '';
 	let mapNeedsRecenter = false;
 	let showSettings = false;
 	let showAdmin = false;
+	let windowHeight = 0;
 
 	$: isNavActive = $navInfo.state === 'navigating';
 	$: isPreviewActive = $navInfo.state === 'preview';
 	$: hideSheet = isNavActive || isPreviewActive;
+
+	// Overlay positioning based on bottom sheet state
+	$: sheetHeightFromBottom = windowHeight > 0 ? windowHeight - sheetTopPx : 80;
+	$: overlayBottom = hideSheet ? 96 : Math.max(sheetHeightFromBottom + 12, 96);
+	$: overlayVisible = hideSheet || sheetState !== 'full';
 
 	function handleInteraction() {
 		if (!audioUnlocked) {
@@ -120,6 +127,8 @@
 	onDestroy(() => { releaseWakeLock(); });
 </script>
 
+<svelte:window bind:innerHeight={windowHeight} />
+
 <svelte:head>
 	<title>Radar GPS</title>
 </svelte:head>
@@ -133,12 +142,12 @@
 		<GpsIndicator />
 	{/if}
 
-	<SpeedOverlay />
+	<SpeedOverlay bottomPx={overlayBottom} visible={overlayVisible} />
 	<RadarAlert />
 	<TurnByTurn />
 	<RoutePreview />
 
-	<RecenterButton visible={mapNeedsRecenter} on:recenter={handleRecenter} />
+	<RecenterButton visible={mapNeedsRecenter} bottomPx={overlayBottom} on:recenter={handleRecenter} />
 
 	<!-- Hamburger menu button (hidden during navigation/preview) -->
 	{#if !hideSheet}
@@ -152,7 +161,7 @@
 	{/if}
 
 	{#if !hideSheet}
-		<BottomSheet bind:this={bottomSheet} bind:state={sheetState} on:shortcut={onShortcut} on:history={onHistorySelect}>
+		<BottomSheet bind:this={bottomSheet} bind:state={sheetState} bind:sheetTopPx={sheetTopPx} on:shortcut={onShortcut} on:history={onHistorySelect}>
 			<SearchBar on:focus={onSearchFocus} on:select={onSearchSelect} />
 			{#if routeError}
 				<div class="route-error">{routeError}</div>

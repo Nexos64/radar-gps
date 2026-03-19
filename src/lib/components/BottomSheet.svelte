@@ -23,6 +23,8 @@
 	 */
 
 	export let state: SheetState = 'closed';
+	/** Actual top position in pixels (for external overlay positioning) */
+	export let sheetTopPx = 0;
 
 	let sheetEl: HTMLDivElement;
 	let startY = 0;
@@ -41,6 +43,9 @@
 	$: if (!dragging && sheetEl) {
 		currentTranslate = targetTop;
 	}
+
+	// Export the current top position for overlay positioning
+	$: sheetTopPx = currentTranslate;
 
 	function onTouchStart(e: TouchEvent) {
 		// Ne pas capturer si le touch est dans un input ou la liste scrollable
@@ -72,7 +77,10 @@
 		const min = Math.min(distClosed, distHalf, distFull);
 		if (min === distFull) state = 'full';
 		else if (min === distHalf) state = 'half';
-		else state = 'closed';
+		else {
+			state = 'closed';
+			blurActiveInput();
+		}
 	}
 
 	/** Ouvrir le sheet au tap sur la barre de recherche */
@@ -82,6 +90,15 @@
 
 	export function close() {
 		state = 'closed';
+		blurActiveInput();
+	}
+
+	/** Blur any focused input to dismiss the keyboard */
+	function blurActiveInput() {
+		const el = document.activeElement;
+		if (el && (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement)) {
+			el.blur();
+		}
 	}
 
 	function selectShortcut(type: 'home' | 'work') {
@@ -121,8 +138,8 @@
 	<div
 		class="sheet-overlay"
 		style="top: 0; height: {currentTranslate}px;"
-		on:click={() => { state = 'closed'; }}
-		on:touchstart|preventDefault={() => { state = 'closed'; }}
+		on:click={() => { state = 'closed'; blurActiveInput(); }}
+		on:touchstart|preventDefault={() => { state = 'closed'; blurActiveInput(); }}
 	></div>
 {/if}
 
