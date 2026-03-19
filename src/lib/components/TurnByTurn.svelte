@@ -1,5 +1,11 @@
 <script lang="ts">
+	import { onDestroy } from 'svelte';
 	import { navInfo, currentStep, nextStep, isNavigating, stopNavigation } from '$lib/stores/navigation';
+
+	/** Ticker that updates every 30s to refresh ETA display */
+	let etaTick = 0;
+	const etaInterval = setInterval(() => { etaTick++; }, 30_000);
+	onDestroy(() => clearInterval(etaInterval));
 
 	const MANEUVER_ICONS: Record<string, string> = {
 		'depart': '🚗',
@@ -35,7 +41,8 @@
 		return `${(m / 1000).toFixed(1)} km`;
 	}
 
-	function formatEta(timestamp: number): string {
+	function formatEta(timestamp: number, _tick?: number): string {
+		// _tick param forces Svelte reactivity on interval
 		const d = new Date(timestamp);
 		return d.getHours().toString().padStart(2, '0') + ':' + d.getMinutes().toString().padStart(2, '0');
 	}
@@ -74,7 +81,7 @@
 				<span class="nav-label">restant</span>
 			</div>
 			<div class="nav-stat">
-				<span class="nav-value eta">{formatEta($navInfo.etaTimestamp)}</span>
+				<span class="nav-value eta">{formatEta($navInfo.etaTimestamp, etaTick)}</span>
 				<span class="nav-label">arrivée</span>
 			</div>
 			<button class="stop-btn" on:click={stopNavigation}>✕</button>

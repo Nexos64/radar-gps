@@ -27,12 +27,12 @@
 	const NAV_ZOOM_OFFSET = 1;
 
 	/**
-	 * Offset en pixels pour déplacer la position utilisateur vers le bas de l'écran
-	 * quand on avance (comme un vrai navigateur GPS).
-	 * Negative Y = le centre de la carte se déplace vers le haut = l'utilisateur apparaît plus bas.
+	 * Offset en pixels pour déplacer la position utilisateur vers le bas de l'écran.
+	 * Positive Y = le centre de la carte se déplace vers le bas = l'utilisateur apparaît plus bas.
+	 * MapLibre offset: [x, y] where positive y = down on screen.
 	 */
-	const NAV_CENTER_OFFSET: [number, number] = [0, -150];
-	const FREE_DRIVE_OFFSET: [number, number] = [0, -100];
+	const NAV_CENTER_OFFSET: [number, number] = [0, 150];
+	const FREE_DRIVE_OFFSET: [number, number] = [0, 100];
 
 	/** Types de radars de vitesse à afficher */
 	const SPEED_RADAR_TYPES = new Set(['fixed', 'mobile', 'section_start', 'section_end', 'police', 'other']);
@@ -150,6 +150,7 @@
 	}
 
 	onMount(async () => {
+		try {
 		const maplibregl = await import('maplibre-gl');
 		const { Protocol } = await import('pmtiles');
 		const { layersWithPartialCustomTheme } = await import('protomaps-themes-base');
@@ -222,9 +223,11 @@
 			map.addSource('tomtom-traffic', {
 				type: 'raster',
 				tiles: [
-					`https://api.tomtom.com/traffic/map/4/tile/flow/relative-delay/{z}/{x}/{y}.png?key=${TOMTOM_API_KEY}&tileSize=256&style=relative-delay-dark&t=${trafficEpoch}`
+					`https://api.tomtom.com/traffic/map/4/tile/flow/relative-delay/{z}/{x}/{y}.png?key=${TOMTOM_API_KEY}&tileSize=256&style=relative-delay-dark&thickness=2&t=${trafficEpoch}`
 				],
 				tileSize: 256,
+				minzoom: 6,
+				maxzoom: 18,
 				attribution: '© <a href="https://www.tomtom.com">TomTom</a>'
 			});
 
@@ -233,7 +236,7 @@
 				type: 'raster',
 				source: 'tomtom-traffic',
 				paint: {
-					'raster-opacity': 0.6
+					'raster-opacity': 0.5
 				}
 			});
 
@@ -588,13 +591,16 @@
 						bearing: (pos.heading != null && pos.speed != null && pos.speed > 1)
 							? pos.heading : map.getBearing(),
 						pitch: NAV_PITCH,
-						offset: NAV_CENTER_OFFSET,
+						offset: NAV_CENTER_OFFSET as [number, number],
 						duration: 1000
 					});
 				}
 			}
 		});
 		cleanupFns.push(unsubNavStart);
+		} catch (e) {
+			console.error('[Map] Fatal initialization error:', e);
+		}
 	});
 
 	onDestroy(() => {

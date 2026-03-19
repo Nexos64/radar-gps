@@ -1,20 +1,23 @@
 /**
- * Speed limit lookup — TomTom Snap to Roads API with Swiss-standard fallback.
- * Cache: localStorage with 1-week TTL for speed limits.
+ * Speed limit lookup — Overpass API with multi-server fallback + Swiss-standard defaults.
+ * Cache: localStorage with 1-week TTL.
  */
-
-import { TOMTOM_API_KEY } from '$lib/config';
 
 const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 1 week
 const CACHE_PRECISION = 3; // decimal places (~111m)
 const LS_KEY = 'speedlimit-cache';
+
+const OVERPASS_SERVERS = [
+	'https://overpass-api.de/api/interpreter',
+	'https://overpass.kumi.systems/api/interpreter',
+	'https://maps.mail.ru/osm/tools/overpass/api/interpreter'
+];
 
 interface CacheEntry {
 	limit: number | null;
 	ts: number;
 }
 
-// In-memory mirror of localStorage
 let memCache: Record<string, CacheEntry> = {};
 
 function loadCache() {
@@ -22,7 +25,6 @@ function loadCache() {
 		const raw = localStorage.getItem(LS_KEY);
 		if (raw) {
 			memCache = JSON.parse(raw);
-			// Purge expired entries
 			const now = Date.now();
 			let changed = false;
 			for (const key of Object.keys(memCache)) {
@@ -40,7 +42,6 @@ function loadCache() {
 
 function saveCache() {
 	try {
-		// Keep cache size reasonable (max ~2000 entries)
 		const keys = Object.keys(memCache);
 		if (keys.length > 2000) {
 			const sorted = keys.sort((a, b) => memCache[a].ts - memCache[b].ts);
@@ -49,9 +50,7 @@ function saveCache() {
 			}
 		}
 		localStorage.setItem(LS_KEY, JSON.stringify(memCache));
-	} catch {
-		// localStorage full — ignore
-	}
+	} catch { /* ignore */ }
 }
 
 function cacheKey(lat: number, lng: number): string {
@@ -73,7 +72,6 @@ function setCache(key: string, limit: number | null) {
 	saveCache();
 }
 
-// Load cache on module init
 if (typeof window !== 'undefined') {
 	loadCache();
 }
@@ -97,30 +95,46 @@ const FALLBACK_LIMITS: Record<string, number> = {
 };
 
 /**
- * Query the nearest road class from OSM Overpass (for fallback purposes).
+ * Query the nearest road's maxspeed and highway type from OSM.
+ * Tries multiple Overpass servers.
  */
-async function fetchRoadClass(lat: number, lng: number): Promise<string | null> {
-	try {
-		const query = `[out:json][timeout:5];way(around:30,${lat},${lng})["highway"];out tags 1;`;
-		const res = await fetch('https://overpass-api.de/api/interpreter', {
-			method: 'POST',
-			body: `data=${encodeURIComponent(query)}`,
-			headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
-		});
-		if (!res.ok) return null;
-		const data = await res.json();
-		if (data.elements?.length > 0) {
-			return data.elements[0].tags?.highway || null;
+async function fetchRoadInfo(lat: number, lng: number): Promise<{ maxspeed: number | null; highway: string | null }> {
+	const query = `[out:json][timeout:5];way(around:30,${lat},${lng})["highway"];out tags 1;`;
+
+	for (const server of OVERPASS_SERVERS) {
+		try {
+			const res = await fetch(server, {
+				method: 'POST',
+				body: `data=${encodeURIComponent(query)}`,
+				headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+			});
+			if (res.status === 429) continue; // Rate limited — try next server
+			if (!res.ok) continue;
+
+			const data = await res.json();
+			if (data.elements?.length > 0) {
+				const tags = data.elements[0].tags || {};
+				const highway = tags.highway || null;
+				const maxspeedStr = tags.maxspeed || tags['maxspeed:forward'];
+				let maxspeed: number | null = null;
+				if (maxspeedStr) {
+					const n = parseInt(maxspeedStr, 10);
+					if (!isNaN(n)) maxspeed = n;
+				}
+				return { maxspeed, highway };
+			}
+			return { maxspeed: null, highway: null };
+		} catch {
+			continue;
 		}
-	} catch {
-		// ignore
 	}
-	return null;
+	return { maxspeed: null, highway: null };
 }
 
 /**
- * Fetch speed limit for a position from TomTom Snap to Roads API.
- * Falls back to Swiss standard limits based on OSM road class.
+ * Fetch speed limit for a position.
+ * Uses OSM Overpass with multi-server fallback.
+ * Falls back to Swiss standard limits based on road class.
  * Cache: 1 week in localStorage.
  */
 export async function fetchSpeedLimit(lat: number, lng: number): Promise<number | null> {
@@ -129,38 +143,22 @@ export async function fetchSpeedLimit(lat: number, lng: number): Promise<number 
 	if (cached !== undefined) return cached;
 
 	try {
-		const url = `https://api.tomtom.com/snap-to-roads/1/snap-to-roads?key=${TOMTOM_API_KEY}`;
-		const res = await fetch(url, {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				points: [{ latitude: lat, longitude: lng }],
-				fields: '{snappedPoints{speedLimit}}'
-			})
-		});
+		const { maxspeed, highway } = await fetchRoadInfo(lat, lng);
 
-		if (res.ok) {
-			const data = await res.json();
-			const speedLimit = data?.snappedPoints?.[0]?.speedLimit;
-			if (speedLimit && typeof speedLimit === 'number' && speedLimit > 0) {
-				setCache(key, speedLimit);
-				return speedLimit;
-			}
+		// Use explicit maxspeed if available
+		if (maxspeed && maxspeed > 0) {
+			setCache(key, maxspeed);
+			return maxspeed;
 		}
-	} catch {
-		// TomTom failed, fall through to fallback
-	}
 
-	// Fallback: get road class from OSM and use Swiss defaults
-	try {
-		const roadClass = await fetchRoadClass(lat, lng);
-		if (roadClass && roadClass in FALLBACK_LIMITS) {
-			const limit = FALLBACK_LIMITS[roadClass];
+		// Fallback to default by road class
+		if (highway && highway in FALLBACK_LIMITS) {
+			const limit = FALLBACK_LIMITS[highway];
 			setCache(key, limit);
 			return limit;
 		}
 	} catch {
-		// ignore
+		// All servers failed
 	}
 
 	setCache(key, null);

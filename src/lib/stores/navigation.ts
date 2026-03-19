@@ -289,8 +289,17 @@ export function updateNavPosition(pos: GpsPosition): void {
 		distRemaining += route.steps[i].distanceM;
 	}
 
+	// Estimate remaining duration based on distance ratio + current speed
 	const ratio = route.distanceM > 0 ? distRemaining / route.distanceM : 0;
-	const durRemaining = route.durationS * ratio;
+	let durRemaining: number;
+	if (pos.speed != null && pos.speed > 1) {
+		// Blend: average between proportional ETA and speed-based ETA
+		const speedBasedS = distRemaining / pos.speed;
+		const proportionalS = route.durationS * ratio;
+		durRemaining = (speedBasedS + proportionalS) / 2;
+	} else {
+		durRemaining = route.durationS * ratio;
+	}
 
 	// Arrivée ?
 	if (stepIdx >= route.steps.length - 1 && distToNext < STEP_REACHED_M) {
