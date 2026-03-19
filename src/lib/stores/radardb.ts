@@ -117,12 +117,12 @@ export async function getRadarsInView(
 	return dedup(inView);
 }
 
-const SOURCE_PRIORITY: Record<string, number> = { luftop: 0, osm: 1, waze: 2 };
+const SOURCE_PRIORITY: Record<string, number> = { osm: 0, luftop: 1, waze: 2 };
 const DEDUP_DISTANCE_M = 100;
 
 /** Deduplicate radars: if two radars are within 100m, keep the higher-priority source */
 function dedup(radars: Radar[]): Radar[] {
-	// Sort by priority (luftop first)
+	// Sort by priority (OSM first, then Luftop, then Waze)
 	const sorted = [...radars].sort(
 		(a, b) => (SOURCE_PRIORITY[a.source] ?? 9) - (SOURCE_PRIORITY[b.source] ?? 9)
 	);

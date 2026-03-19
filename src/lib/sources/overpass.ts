@@ -1,13 +1,39 @@
 import { BBOX } from '$lib/config';
 import type { Radar } from '$lib/types';
 
-const OVERPASS_URL = 'https://overpass-api.de/api/interpreter';
+const OVERPASS_SERVERS = [
+	'https://overpass-api.de/api/interpreter',
+	'https://overpass.kumi.systems/api/interpreter',
+	'https://maps.mail.ru/osm/tools/overpass/api/interpreter'
+];
 
-function buildQuery(): string {
+/**
+ * Split the big FR+CH+DE bbox into smaller regional chunks
+ * to avoid Overpass timeout on large queries.
+ */
+function getRegionalBboxes(): string[] {
+	// Split into ~6 regions to keep each query manageable
 	const { south, north, west, east } = BBOX;
-	const bbox = `${south},${west},${north},${east}`;
-	return `[out:json][timeout:60];
-node["highway"="speed_camera"](${bbox});
+	const midLat = (south + north) / 2;
+	const thirds = [west, (west + east) / 3, (2 * (west + east)) / 3, east];
+
+	const bboxes: string[] = [];
+	for (let i = 0; i < thirds.length - 1; i++) {
+		// Bottom half
+		bboxes.push(`${south},${thirds[i]},${midLat},${thirds[i + 1]}`);
+		// Top half
+		bboxes.push(`${midLat},${thirds[i]},${north},${thirds[i + 1]}`);
+	}
+	return bboxes;
+}
+
+function buildQuery(bbox: string): string {
+	return `[out:json][timeout:90];
+(
+  node["highway"="speed_camera"](${bbox});
+  node["enforcement"="maxspeed"](${bbox});
+  node["enforcement"="speed"](${bbox});
+);
 out body;`;
 }
 
@@ -25,7 +51,6 @@ function parseDirection(tags: Record<string, string>): { angle: number | null; b
 	const n = parseFloat(dir);
 	if (!isNaN(n)) return { angle: n, bidirectional: false };
 
-	// Cardinal directions
 	const cardinals: Record<string, number> = {
 		N: 0, NE: 45, E: 90, SE: 135, S: 180, SW: 225, W: 270, NW: 315
 	};
@@ -36,28 +61,81 @@ function parseDirection(tags: Record<string, string>): { angle: number | null; b
 	return { angle: null, bidirectional: true };
 }
 
+/**
+ * Try fetching from multiple Overpass servers with retry.
+ */
+async function queryOverpass(query: string): Promise<any> {
+	let lastError = '';
+
+	for (const server of OVERPASS_SERVERS) {
+		try {
+			const res = await fetch(server, {
+				method: 'POST',
+				body: `data=${encodeURIComponent(query)}`,
+				headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+			});
+
+			if (res.status === 429 || res.status === 504) {
+				lastError = `${server} returned ${res.status}`;
+				continue; // Try next server
+			}
+
+			if (!res.ok) {
+				lastError = `${server} returned ${res.status}`;
+				continue;
+			}
+
+			return await res.json();
+		} catch (e) {
+			lastError = e instanceof Error ? e.message : String(e);
+			continue;
+		}
+	}
+
+	throw new Error(`All Overpass servers failed: ${lastError}`);
+}
+
 export async function fetchOsmRadars(): Promise<Radar[]> {
-	const query = buildQuery();
-	const res = await fetch(OVERPASS_URL, {
-		method: 'POST',
-		body: `data=${encodeURIComponent(query)}`,
-		headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
-	});
+	const bboxes = getRegionalBboxes();
+	const seenIds = new Set<string>();
+	const allRadars: Radar[] = [];
 
-	if (!res.ok) throw new Error(`Overpass HTTP ${res.status}`);
-	const data = await res.json();
+	// Fetch each regional chunk (sequentially to avoid rate limits)
+	for (const bbox of bboxes) {
+		try {
+			const query = buildQuery(bbox);
+			const data = await queryOverpass(query);
 
-	return data.elements.map((el: any) => {
-		const { angle, bidirectional } = parseDirection(el.tags || {});
-		return {
-			id: `osm-${el.id}`,
-			lat: el.lat,
-			lng: el.lon,
-			type: 'fixed' as const,
-			speedLimit: parseSpeedLimit(el.tags || {}),
-			angle,
-			bidirectional,
-			source: 'osm' as const
-		};
-	});
+			if (!data.elements) continue;
+
+			for (const el of data.elements) {
+				const id = `osm-${el.id}`;
+				if (seenIds.has(id)) continue;
+				seenIds.add(id);
+
+				const { angle, bidirectional } = parseDirection(el.tags || {});
+				allRadars.push({
+					id,
+					lat: el.lat,
+					lng: el.lon,
+					type: 'fixed' as const,
+					speedLimit: parseSpeedLimit(el.tags || {}),
+					angle,
+					bidirectional,
+					source: 'osm' as const
+				});
+			}
+
+			// Small delay between chunks to be polite to the server
+			if (bboxes.indexOf(bbox) < bboxes.length - 1) {
+				await new Promise((r) => setTimeout(r, 2000));
+			}
+		} catch (e) {
+			console.warn(`[OSM] Failed to fetch bbox ${bbox}:`, e);
+			// Continue with other chunks even if one fails
+		}
+	}
+
+	console.log(`[OSM] Total radars fetched: ${allRadars.length}`);
+	return allRadars;
 }
