@@ -6,7 +6,7 @@
 	import { radars, loadStaticRadars, startWazePolling, stopWazePolling, setWazeBbox, loadRadarsForView, luftopStale, checkCountryExpansion } from '$lib/stores/radars';
 	import { evaluateAlerts, resetAlerts } from '$lib/stores/alerts';
 	import { destination } from '$lib/stores/destination';
-	import { navInfo, navStartTick, updateNavPosition, isOffRoute, getRouteRadars } from '$lib/stores/navigation';
+	import { navInfo, navStartTick, updateNavPosition, isOffRoute, getRouteRadars, getRemainingGeometry, rerouteFromPosition } from '$lib/stores/navigation';
 	import { updateSpeedLimit, resetSpeedLimit } from '$lib/stores/speedlimit';
 	import { registerRadarIcons } from './radar-icons';
 	import type { Radar } from '$lib/types';
@@ -26,12 +26,16 @@
 	const NAV_PITCH = 50;
 	const NAV_ZOOM_OFFSET = 1;
 
-	/** Determine whether we should tilt the map based on speed/navigation */
-	function shouldTilt(speedMs: number | null, navigating: boolean): boolean {
-		if (navigating) return true;
-		// Free navigation: tilt when moving fast enough
-		return speedMs != null && speedMs >= FREE_TILT_SPEED_MS;
-	}
+	/**
+	 * Offset en pixels pour déplacer la position utilisateur vers le bas de l'écran
+	 * quand on avance (comme un vrai navigateur GPS).
+	 * Negative Y = le centre de la carte se déplace vers le haut = l'utilisateur apparaît plus bas.
+	 */
+	const NAV_CENTER_OFFSET: [number, number] = [0, -150];
+	const FREE_DRIVE_OFFSET: [number, number] = [0, -100];
+
+	/** Types de radars de vitesse à afficher */
+	const SPEED_RADAR_TYPES = new Set(['fixed', 'mobile', 'section_start', 'section_end', 'police', 'other']);
 
 	function getPitch(speedMs: number | null, navigating: boolean): number {
 		if (navigating) return NAV_PITCH;
@@ -53,10 +57,19 @@
 		return navigating ? base + NAV_ZOOM_OFFSET : base;
 	}
 
+	/** Get the appropriate center offset based on speed/navigation state */
+	function getCenterOffset(speedMs: number | null, navigating: boolean): [number, number] {
+		if (navigating) return NAV_CENTER_OFFSET;
+		if (speedMs != null && speedMs >= FREE_TILT_SPEED_MS) return FREE_DRIVE_OFFSET;
+		return [0, 0]; // no offset when stationary
+	}
+
 	function radarsToGeoJson(radarList: Radar[]): GeoJSON.FeatureCollection {
+		// Filter to speed radar types only
+		const speedRadars = radarList.filter((r) => SPEED_RADAR_TYPES.has(r.type));
 		return {
 			type: 'FeatureCollection',
-			features: radarList.map((r) => ({
+			features: speedRadars.map((r) => ({
 				type: 'Feature' as const,
 				geometry: { type: 'Point' as const, coordinates: [r.lng, r.lat] },
 				properties: {
@@ -124,12 +137,13 @@
 		if (pos && map) {
 			const nav = get(navInfo);
 			const navigating = nav.state === 'navigating';
+			const hasHeading = pos.heading != null && pos.speed != null && pos.speed > 1;
 			map.easeTo({
 				center: [pos.lng, pos.lat],
 				zoom: zoomForSpeed(pos.speed, navigating),
-				bearing: (pos.heading != null && pos.speed != null && pos.speed > 1)
-					? pos.heading : map.getBearing(),
+				bearing: hasHeading ? pos.heading! : map.getBearing(),
 				pitch: getPitch(pos.speed, navigating),
+				offset: getCenterOffset(pos.speed, navigating),
 				duration: 800
 			});
 		}
@@ -143,14 +157,11 @@
 		const protocol = new Protocol();
 		maplibregl.addProtocol('pmtiles', protocol.tile);
 
-		// Scale line-width values by a factor (handles numbers and interpolate expressions)
 		function scaleLineWidth(w: any, factor: number): any {
 			if (typeof w === 'number') return w * factor;
 			if (!Array.isArray(w)) return w;
-			// MapLibre interpolate expression: ['interpolate', interp, input, stop1, val1, ...]
 			if (w[0] === 'interpolate' || w[0] === 'interpolate-hcl') {
 				return w.map((v: any, i: number) => {
-					// Values are at odd indices starting from index 4 (stop, val pairs)
 					if (i >= 4 && i % 2 === 0) return typeof v === 'number' ? v * factor : v;
 					return v;
 				});
@@ -159,7 +170,6 @@
 		}
 
 		const baseLayers = layersWithPartialCustomTheme('protomaps', 'dark', {
-			// Uniformiser les labels — même couleur que roads_label_major (#666666)
 			city_label: '#666666',
 			city_label_halo: '#1f1f1f',
 			state_label: '#666666',
@@ -172,11 +182,9 @@
 			ocean_label: '#666666',
 			peak_label: '#666666',
 			waterway_label: '#666666',
-			// Bâtiments moins sombres
 			buildings: '#222222',
 		}, 'fr');
 
-		// Épaissir les routes
 		const mapLayers = baseLayers.map((layer: any) => {
 			if (layer.type === 'line' && layer.paint && 'line-width' in layer.paint) {
 				const isRoad = /highway|major|minor|link|other|service|bridges/.test(layer.id);
@@ -232,7 +240,7 @@
 			// ── Register radar icons ──
 			registerRadarIcons(map);
 
-			// ── Navigation arrow icon (moving) — solid triangle pointer ──
+			// ── Navigation arrow icon (always used) — solid blue triangle ──
 			{
 				const s = 64;
 				const c = document.createElement('canvas');
@@ -240,23 +248,20 @@
 				const ctx = c.getContext('2d')!;
 				const cx = s / 2;
 
-				// Shadow
 				ctx.save();
 				ctx.shadowColor = 'rgba(0,0,0,0.4)';
 				ctx.shadowBlur = 6;
 				ctx.shadowOffsetY = 2;
 
-				// Solid triangle pointing UP with rounded corners
 				ctx.beginPath();
-				ctx.moveTo(cx, 6);           // top point
-				ctx.lineTo(cx + 22, 54);     // bottom right
-				ctx.lineTo(cx - 22, 54);     // bottom left
+				ctx.moveTo(cx, 6);
+				ctx.lineTo(cx + 22, 54);
+				ctx.lineTo(cx - 22, 54);
 				ctx.closePath();
 				ctx.fillStyle = '#4285F4';
 				ctx.fill();
 				ctx.restore();
 
-				// White border
 				ctx.strokeStyle = '#ffffff';
 				ctx.lineWidth = 2.5;
 				ctx.lineJoin = 'round';
@@ -268,50 +273,6 @@
 				ctx.stroke();
 
 				map.addImage('nav-arrow', { width: s, height: s, data: new Uint8Array(ctx.getImageData(0, 0, s, s).data) });
-			}
-
-			// ── Compass dot icon (stationary) ──
-			{
-				const s = 64;
-				const c = document.createElement('canvas');
-				c.width = s; c.height = s;
-				const ctx = c.getContext('2d')!;
-				const cx = s / 2, cy = s / 2;
-				const r = 18;
-
-				// Shadow
-				ctx.save();
-				ctx.shadowColor = 'rgba(0,0,0,0.3)';
-				ctx.shadowBlur = 5;
-				ctx.shadowOffsetY = 1;
-
-				// Blue circle
-				ctx.beginPath();
-				ctx.arc(cx, cy, r, 0, Math.PI * 2);
-				ctx.fillStyle = '#4285F4';
-				ctx.fill();
-				ctx.restore();
-
-				// White border
-				ctx.strokeStyle = '#ffffff';
-				ctx.lineWidth = 3;
-				ctx.beginPath();
-				ctx.arc(cx, cy, r, 0, Math.PI * 2);
-				ctx.stroke();
-
-				// North indicator — small red/orange triangle at top
-				ctx.fillStyle = '#FF5252';
-				ctx.beginPath();
-				ctx.moveTo(cx, cy - r - 5);      // tip above circle
-				ctx.lineTo(cx - 5, cy - r + 4);   // bottom left
-				ctx.lineTo(cx + 5, cy - r + 4);   // bottom right
-				ctx.closePath();
-				ctx.fill();
-				ctx.strokeStyle = '#ffffff';
-				ctx.lineWidth = 1.5;
-				ctx.stroke();
-
-				map.addImage('compass-dot', { width: s, height: s, data: new Uint8Array(ctx.getImageData(0, 0, s, s).data) });
 			}
 
 			// ── Route polyline ──
@@ -370,7 +331,7 @@
 				type: 'symbol',
 				source: 'user-position',
 				layout: {
-					'icon-image': ['case', ['get', 'moving'], 'nav-arrow', 'compass-dot'],
+					'icon-image': 'nav-arrow',
 					'icon-size': 0.6,
 					'icon-rotate': ['get', 'rotation'],
 					'icon-rotation-alignment': 'map',
@@ -379,7 +340,7 @@
 				}
 			});
 
-			// ── Radars (no direction arrows — bidirectional alert logic) ──
+			// ── Radars ──
 			map.addSource('radars', {
 				type: 'geojson',
 				data: { type: 'FeatureCollection', features: [] }
@@ -397,7 +358,6 @@
 					'icon-rotation-alignment': 'map'
 				}
 			});
-
 
 			// ── Destination marker ──
 			map.addSource('destination', {
@@ -498,8 +458,7 @@
 			const hasHeading = $pos.heading != null && $pos.speed != null && $pos.speed > 1;
 			const compass = get(compassHeading);
 
-			// Determine marker mode and rotation — always show arrow when navigating
-			const moving = hasHeading || navigating;
+			// Rotation: use GPS heading if moving, compass heading otherwise
 			const rotation = hasHeading ? ($pos.heading ?? 0) : (compass ?? 0);
 
 			const feature: GeoJSON.Feature = {
@@ -507,7 +466,6 @@
 				geometry: { type: 'Point', coordinates: [$pos.lng, $pos.lat] },
 				properties: {
 					accuracyRadius,
-					moving,
 					rotation
 				}
 			};
@@ -523,6 +481,7 @@
 					zoom: zoomForSpeed($pos.speed, navigating),
 					bearing: hasHeading ? $pos.heading! : map.getBearing(),
 					pitch: getPitch($pos.speed, navigating),
+					offset: getCenterOffset($pos.speed, navigating),
 					duration: 1000
 				});
 			}
@@ -530,7 +489,7 @@
 			// Update speed limit
 			updateSpeedLimit($pos.lat, $pos.lng);
 
-			// Check if user crossed into a new country (lazy OSM expansion)
+			// Check if user crossed into a new country
 			checkCountryExpansion($pos.lat, $pos.lng);
 
 			// Refresh visible radars
@@ -539,9 +498,28 @@
 			// Navigation tracking
 			if (navigating) {
 				updateNavPosition($pos);
-				evaluateAlerts($pos, getRouteRadars(), true);
+
+				// Update route display with trimmed geometry
+				const routeSrc = map.getSource('route');
+				if (routeSrc) {
+					const remaining = getRemainingGeometry();
+					if (remaining.length >= 2) {
+						(routeSrc as any).setData(routeToGeoJson(remaining));
+					}
+				}
+
+				// Check off-route and trigger rerouting
+				if (isOffRoute($pos)) {
+					rerouteFromPosition($pos);
+				}
+
+				// Filter alerts to speed radars on route only
+				const routeRadars = getRouteRadars().filter((r) => SPEED_RADAR_TYPES.has(r.type));
+				evaluateAlerts($pos, routeRadars, true);
 			} else {
-				evaluateAlerts($pos, get(radars), false);
+				// Free mode: filter to speed radars only
+				const allRadars = get(radars).filter((r) => SPEED_RADAR_TYPES.has(r.type));
+				evaluateAlerts($pos, allRadars, false);
 			}
 		});
 		cleanupFns.push(unsubPosition);
@@ -580,10 +558,13 @@
 			if (!map || !map.getSource('route')) return;
 
 			if ($nav.route) {
-				(map.getSource('route') as any).setData(routeToGeoJson($nav.route.geometry));
+				// In navigating mode, the route is updated via the position subscription (trimmed)
+				// In preview mode, show the full route
+				if ($nav.state === 'preview') {
+					(map.getSource('route') as any).setData(routeToGeoJson($nav.route.geometry));
+				}
 			} else {
 				(map.getSource('route') as any).setData({ type: 'FeatureCollection', features: [] });
-				// Reset pitch when leaving navigation (if stopped)
 				const pos = get(position);
 				if (map.getPitch() > 0 && (!pos || !pos.speed || pos.speed < FREE_TILT_SPEED_MS)) {
 					map.easeTo({ pitch: 0, duration: 500 });
@@ -607,6 +588,7 @@
 						bearing: (pos.heading != null && pos.speed != null && pos.speed > 1)
 							? pos.heading : map.getBearing(),
 						pitch: NAV_PITCH,
+						offset: NAV_CENTER_OFFSET,
 						duration: 1000
 					});
 				}

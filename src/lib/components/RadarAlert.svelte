@@ -65,10 +65,10 @@
 <style>
 	.radar-alert {
 		position: fixed;
-		top: calc(env(safe-area-inset-top, 12px) + 44px);
+		top: env(safe-area-inset-top, 8px);
 		left: 12px;
 		right: 12px;
-		z-index: 30;
+		z-index: 50;
 		display: flex;
 		align-items: center;
 		gap: 12px;

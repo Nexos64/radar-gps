@@ -1,10 +1,11 @@
 /**
  * Navigation store — gère l'état de navigation
  *
- * - Calcul d'itinéraire via OSRM
+ * - Calcul d'itinéraire via TomTom (traffic-aware) + fallback OSRM
  * - Comptage des radars dans un corridor autour de l'itinéraire
  * - Suivi turn-by-turn en temps réel
- * - Intégration avec le moteur d'alertes (radars sur le trajet uniquement)
+ * - Effacement progressif du tracé derrière l'utilisateur
+ * - Recalcul automatique si hors route
  */
 
 import { writable, derived, get } from 'svelte/store';
@@ -19,12 +20,15 @@ import { logError } from '$lib/stores/errorlog';
 
 // ── Types ──
 
+/** Types de radars de vitesse (excluant les radars feu rouge) */
+const SPEED_RADAR_TYPES = new Set(['fixed', 'mobile', 'section_start', 'section_end', 'police', 'other']);
+
 export type NavState = 'idle' | 'preview' | 'navigating';
 
 export interface NavInfo {
 	state: NavState;
 	route: Route | null;
-	/** Radars dans le corridor de l'itinéraire */
+	/** Radars de vitesse dans le corridor de l'itinéraire */
 	radarsOnRoute: Radar[];
 	/** Index de l'étape courante dans route.steps */
 	currentStepIndex: number;
@@ -36,6 +40,8 @@ export interface NavInfo {
 	durationRemaining: number;
 	/** Heure d'arrivée estimée (timestamp ms) */
 	etaTimestamp: number;
+	/** Index dans route.geometry du point le plus proche de l'utilisateur */
+	trimIndex: number;
 }
 
 // ── Stores ──
@@ -48,7 +54,8 @@ const IDLE_NAV: NavInfo = {
 	distanceToNextStep: 0,
 	distanceRemaining: 0,
 	durationRemaining: 0,
-	etaTimestamp: 0
+	etaTimestamp: 0,
+	trimIndex: 0
 };
 
 export const navInfo = writable<NavInfo>(IDLE_NAV);
@@ -70,14 +77,14 @@ export const nextStep = derived(navInfo, ($n) => {
 
 // ── Constantes ──
 
-/** Largeur du corridor pour compter les radars (mètres de chaque côté de l'itinéraire) */
 const ROUTE_CORRIDOR_M = 100;
-
-/** Distance seuil pour considérer qu'on a atteint un waypoint (m) */
 const STEP_REACHED_M = 40;
-
-/** Distance seuil pour considérer qu'on est hors route (m) */
 const OFF_ROUTE_M = 100;
+
+// Reroute cooldown to avoid spam
+let lastRerouteTime = 0;
+const REROUTE_COOLDOWN_MS = 15_000;
+let isRerouting = false;
 
 // ── Fonctions utilitaires ──
 
@@ -92,16 +99,12 @@ function haversineM(lat1: number, lng1: number, lat2: number, lng2: number): num
 	return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-/**
- * Distance minimale d'un point à un segment de polyligne.
- * Retourne la distance en mètres depuis le point au segment le plus proche.
- */
 function distanceToPolyline(lat: number, lng: number, polyline: [number, number][]): number {
 	let minDist = Infinity;
 	for (let i = 0; i < polyline.length - 1; i++) {
 		const d = distanceToSegment(
 			lat, lng,
-			polyline[i][1], polyline[i][0],     // [lng,lat] → lat,lng
+			polyline[i][1], polyline[i][0],
 			polyline[i + 1][1], polyline[i + 1][0]
 		);
 		if (d < minDist) minDist = d;
@@ -109,15 +112,11 @@ function distanceToPolyline(lat: number, lng: number, polyline: [number, number]
 	return minDist;
 }
 
-/**
- * Distance from point P to line segment AB (approximate, flat-earth for short distances)
- */
 function distanceToSegment(
 	pLat: number, pLng: number,
 	aLat: number, aLng: number,
 	bLat: number, bLng: number
 ): number {
-	// Convert to approximate meters (flat-earth)
 	const cosLat = Math.cos(pLat * Math.PI / 180);
 	const px = (pLng - aLng) * cosLat;
 	const py = pLat - aLat;
@@ -138,11 +137,33 @@ function distanceToSegment(
 	return haversineM(pLat, pLng, projLat, projLng);
 }
 
+/**
+ * Find the index of the closest point in the geometry to the user position.
+ */
+function findClosestGeometryIndex(lat: number, lng: number, geometry: [number, number][], startFrom: number = 0): number {
+	let minDist = Infinity;
+	let minIdx = startFrom;
+
+	// Search forward from current position (+ some lookback for tolerance)
+	const searchStart = Math.max(0, startFrom - 5);
+	const searchEnd = Math.min(geometry.length, startFrom + 200); // Don't search too far ahead
+
+	for (let i = searchStart; i < searchEnd; i++) {
+		const d = haversineM(lat, lng, geometry[i][1], geometry[i][0]);
+		if (d < minDist) {
+			minDist = d;
+			minIdx = i;
+		}
+	}
+	return minIdx;
+}
+
 // ── Comptage des radars sur l'itinéraire ──
 
 async function countRadarsOnRoute(route: Route): Promise<Radar[]> {
 	const allRadars = await getAllRadars();
 	return allRadars.filter((r) =>
+		SPEED_RADAR_TYPES.has(r.type) &&
 		distanceToPolyline(r.lat, r.lng, route.geometry) <= ROUTE_CORRIDOR_M
 	);
 }
@@ -158,18 +179,14 @@ function computeRouteWithData(route: Route, radarsOnRoute: Radar[]) {
 		distanceToNextStep: route.steps[0]?.distanceM ?? 0,
 		distanceRemaining: route.distanceM,
 		durationRemaining: route.durationS,
-		etaTimestamp: Date.now() + route.durationS * 1000
+		etaTimestamp: Date.now() + route.durationS * 1000,
+		trimIndex: 0
 	});
 	console.log(`[nav] Route: ${(route.distanceM / 1000).toFixed(1)} km, ${route.steps.length} steps, ${radarsOnRoute.length} radars`);
 }
 
 // ── API publique ──
 
-/**
- * Calculer l'itinéraire et passer en mode preview.
- * Charge les radars le long de l'itinéraire.
- * Respecte les paramètres (avoid highways, radar-free) depuis settings.
- */
 export async function computeRoute(
 	fromLat: number,
 	fromLng: number,
@@ -186,15 +203,11 @@ export async function computeRoute(
 
 		let radarsOnRoute = await countRadarsOnRoute(route);
 
-		// If radar-free route is enabled, try to find a route that avoids radars
-		// For now, just flag the radars — full re-routing would need waypoints
 		if (appSettings.radarFreeRoute && radarsOnRoute.length > 0) {
-			// Try alternate route without highways (often avoids fixed radars)
 			try {
 				const altRoute = await calculateRoute(fromLat, fromLng, toLat, toLng, { avoidHighways: true });
 				const altRadars = await countRadarsOnRoute(altRoute);
 				if (altRadars.length < radarsOnRoute.length) {
-					// Use the route with fewer radars
 					console.log(`[nav] Radar-free: switching to alt route (${altRadars.length} vs ${radarsOnRoute.length} radars)`);
 					return computeRouteWithData(altRoute, altRadars);
 				}
@@ -222,25 +235,24 @@ export function startNavigation(): void {
 	const current = get(navInfo);
 	if (current.state !== 'preview' || !current.route) return;
 
-	// Save to route history
 	const dest = get(destination);
 	if (dest) {
 		addToHistory(dest.label, dest.detail, dest.lat, dest.lng);
 	}
 
 	navInfo.update((n) => ({ ...n, state: 'navigating' }));
-	// Signal Map to recenter on user position
 	navStartTick.update((n) => n + 1);
 }
 
 /** Arrêter la navigation et revenir à idle */
 export function stopNavigation(): void {
 	navInfo.set(IDLE_NAV);
+	isRerouting = false;
 }
 
 /**
  * Mise à jour de la position GPS pendant la navigation.
- * Calcule la distance au prochain step et avance les steps.
+ * Calcule la distance au prochain step, avance les steps, et met à jour le trimIndex.
  */
 export function updateNavPosition(pos: GpsPosition): void {
 	const current = get(navInfo);
@@ -249,9 +261,9 @@ export function updateNavPosition(pos: GpsPosition): void {
 	const { route } = current;
 	let stepIdx = current.currentStepIndex;
 
-	// Vérifier si on a atteint le step courant
+	// Advance steps
 	while (stepIdx < route.steps.length - 1) {
-		const step = route.steps[stepIdx + 1]; // prochain waypoint
+		const step = route.steps[stepIdx + 1];
 		const distToStep = haversineM(pos.lat, pos.lng, step.location[1], step.location[0]);
 
 		if (distToStep < STEP_REACHED_M) {
@@ -261,6 +273,9 @@ export function updateNavPosition(pos: GpsPosition): void {
 		}
 	}
 
+	// Update trim index (progressive route erasure)
+	const trimIndex = findClosestGeometryIndex(pos.lat, pos.lng, route.geometry, current.trimIndex);
+
 	// Distance au prochain step
 	let distToNext = 0;
 	if (stepIdx < route.steps.length - 1) {
@@ -268,13 +283,12 @@ export function updateNavPosition(pos: GpsPosition): void {
 		distToNext = haversineM(pos.lat, pos.lng, next.location[1], next.location[0]);
 	}
 
-	// Distance restante (approximation : somme des distances des steps restants)
+	// Distance restante
 	let distRemaining = distToNext;
 	for (let i = stepIdx + 1; i < route.steps.length; i++) {
 		distRemaining += route.steps[i].distanceM;
 	}
 
-	// Durée restante (approximation proportionnelle)
 	const ratio = route.distanceM > 0 ? distRemaining / route.distanceM : 0;
 	const durRemaining = route.durationS * ratio;
 
@@ -292,16 +306,21 @@ export function updateNavPosition(pos: GpsPosition): void {
 		distanceToNextStep: distToNext,
 		distanceRemaining: distRemaining,
 		durationRemaining: durRemaining,
-		etaTimestamp: Date.now() + durRemaining * 1000
+		etaTimestamp: Date.now() + durRemaining * 1000,
+		trimIndex
 	});
 }
 
-/**
- * Obtenir les radars sur l'itinéraire (pour le moteur d'alertes).
- * En mode navigation, on filtre les alertes aux radars du trajet uniquement.
- */
+/** Obtenir les radars de vitesse sur l'itinéraire */
 export function getRouteRadars(): Radar[] {
 	return get(navInfo).radarsOnRoute;
+}
+
+/** Obtenir la géométrie restante de l'itinéraire (après trimIndex) */
+export function getRemainingGeometry(): [number, number][] {
+	const current = get(navInfo);
+	if (!current.route) return [];
+	return current.route.geometry.slice(current.trimIndex);
 }
 
 /** Vérifie si l'utilisateur est hors route */
@@ -309,4 +328,48 @@ export function isOffRoute(pos: GpsPosition): boolean {
 	const current = get(navInfo);
 	if (!current.route) return false;
 	return distanceToPolyline(pos.lat, pos.lng, current.route.geometry) > OFF_ROUTE_M;
+}
+
+/**
+ * Recalculate route from current position when user goes off-route.
+ * Debounced with a cooldown to avoid spam.
+ */
+export async function rerouteFromPosition(pos: GpsPosition): Promise<void> {
+	const now = Date.now();
+	if (isRerouting || now - lastRerouteTime < REROUTE_COOLDOWN_MS) return;
+
+	const dest = get(destination);
+	if (!dest) return;
+
+	isRerouting = true;
+	lastRerouteTime = now;
+	console.log('[nav] Off-route detected — recalculating...');
+
+	try {
+		const appSettings = getSettings();
+		const route = await calculateRoute(pos.lat, pos.lng, dest.lat, dest.lng, {
+			avoidHighways: appSettings.avoidHighways
+		});
+
+		const radarsOnRoute = await countRadarsOnRoute(route);
+
+		navInfo.set({
+			state: 'navigating',
+			route,
+			radarsOnRoute,
+			currentStepIndex: 0,
+			distanceToNextStep: route.steps[0]?.distanceM ?? 0,
+			distanceRemaining: route.distanceM,
+			durationRemaining: route.durationS,
+			etaTimestamp: Date.now() + route.durationS * 1000,
+			trimIndex: 0
+		});
+
+		console.log(`[nav] Rerouted: ${(route.distanceM / 1000).toFixed(1)} km, ${radarsOnRoute.length} radars`);
+	} catch (e) {
+		const msg = e instanceof Error ? e.message : String(e);
+		logError('navigation/reroute', msg);
+	} finally {
+		isRerouting = false;
+	}
 }
