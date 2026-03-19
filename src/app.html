@@ -12,11 +12,26 @@
 		%sveltekit.head%
 	</head>
 	<body data-sveltekit-preload-data="hover">
+		<!-- Loading splash visible until SvelteKit hydrates -->
+		<div id="app-splash" style="position:fixed;inset:0;z-index:99999;background:#1a1a2e;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:16px;">
+			<div style="width:48px;height:48px;border:3px solid rgba(66,133,244,0.3);border-top-color:#4285F4;border-radius:50%;animation:sp .8s linear infinite;"></div>
+			<div style="color:rgba(255,255,255,0.5);font:500 14px -apple-system,sans-serif;">Radar GPS</div>
+			<style>@keyframes sp{to{transform:rotate(360deg)}}</style>
+		</div>
 		<div style="display: contents">%sveltekit.body%</div>
 		<script>
 			if ('serviceWorker' in navigator) {
 				navigator.serviceWorker.register('/sw.js');
 			}
+			// Remove splash once app renders
+			function removeSplash() {
+				var s = document.getElementById('app-splash');
+				if (s) { s.style.opacity = '0'; s.style.transition = 'opacity 0.3s'; setTimeout(function() { s.remove(); }, 300); }
+			}
+			// Remove on first paint of real content, or after timeout
+			if (document.readyState === 'complete') removeSplash();
+			else window.addEventListener('load', function() { setTimeout(removeSplash, 200); });
+			setTimeout(removeSplash, 5000); // safety: remove after 5s max
 		</script>
 	</body>
 </html>

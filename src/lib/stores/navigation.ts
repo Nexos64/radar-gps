@@ -11,7 +11,7 @@
 import { writable, derived, get } from 'svelte/store';
 import type { Radar } from '$lib/types';
 import type { GpsPosition } from '$lib/stores/gps';
-import { calculateRoute, type Route, type RouteStep } from '$lib/sources/osrm';
+import { calculateRoute, calculateRouteAlternatives, type Route, type RouteStep } from '$lib/sources/osrm';
 import { getAllRadars } from '$lib/stores/radardb';
 import { getSettings } from '$lib/stores/settings';
 import { addToHistory } from '$lib/stores/history';
@@ -197,25 +197,54 @@ export async function computeRoute(
 
 	try {
 		const appSettings = getSettings();
-		const route = await calculateRoute(fromLat, fromLng, toLat, toLng, {
-			avoidHighways: appSettings.avoidHighways
-		});
+		const routeOptions = { avoidHighways: appSettings.avoidHighways };
 
-		let radarsOnRoute = await countRadarsOnRoute(route);
+		if (appSettings.radarFreeRoute) {
+			// Request multiple alternatives and pick the one with fewest radars
+			console.log('[nav] Radar-free mode: requesting alternatives...');
 
-		if (appSettings.radarFreeRoute && radarsOnRoute.length > 0) {
-			try {
-				const altRoute = await calculateRoute(fromLat, fromLng, toLat, toLng, { avoidHighways: true });
-				const altRadars = await countRadarsOnRoute(altRoute);
-				if (altRadars.length < radarsOnRoute.length) {
-					console.log(`[nav] Radar-free: switching to alt route (${altRadars.length} vs ${radarsOnRoute.length} radars)`);
-					return computeRouteWithData(altRoute, altRadars);
+			const alternatives = await calculateRouteAlternatives(
+				fromLat, fromLng, toLat, toLng, routeOptions
+			);
+
+			// Also try avoid highways as an extra alternative
+			if (!appSettings.avoidHighways) {
+				try {
+					const hwAlt = await calculateRoute(fromLat, fromLng, toLat, toLng, { avoidHighways: true });
+					alternatives.push(hwAlt);
+				} catch {
+					// Ignore — we already have other alternatives
 				}
-			} catch {
-				// Fallback to original route
+			}
+
+			// Score each route by radar count
+			let bestRoute: Route | null = null;
+			let bestRadars: Radar[] = [];
+			let bestScore = Infinity;
+
+			for (const route of alternatives) {
+				const radars = await countRadarsOnRoute(route);
+				// Score: prioritize fewer radars, break ties by shorter distance
+				const score = radars.length * 1_000_000 + route.distanceM;
+				console.log(`[nav] Alternative: ${(route.distanceM / 1000).toFixed(1)} km, ${radars.length} radars (score: ${score.toFixed(0)})`);
+
+				if (score < bestScore) {
+					bestScore = score;
+					bestRoute = route;
+					bestRadars = radars;
+				}
+			}
+
+			if (bestRoute) {
+				console.log(`[nav] Radar-free: selected route with ${bestRadars.length} radars, ${(bestRoute.distanceM / 1000).toFixed(1)} km`);
+				computeRouteWithData(bestRoute, bestRadars);
+				return;
 			}
 		}
 
+		// Standard route (no radar-free mode)
+		const route = await calculateRoute(fromLat, fromLng, toLat, toLng, routeOptions);
+		const radarsOnRoute = await countRadarsOnRoute(route);
 		computeRouteWithData(route, radarsOnRoute);
 	} catch (e) {
 		const msg = e instanceof Error ? e.message : String(e);

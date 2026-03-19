@@ -37,6 +37,8 @@ export interface Route {
 
 export interface RouteOptions {
 	avoidHighways?: boolean;
+	/** Request multiple alternative routes */
+	alternatives?: boolean;
 }
 
 // ── TomTom Routing ──
@@ -74,6 +76,65 @@ const TOMTOM_MANEUVER_MAP: Record<string, { maneuver: string; modifier: string |
 	'WAYPOINT_REACHED': { maneuver: 'continue', modifier: 'straight' },
 };
 
+/** Parse a single TomTom route object into our Route format */
+function parseTomTomRoute(
+	route: any,
+	fromLat: number,
+	fromLng: number
+): Route {
+	const summary = route.summary;
+
+	const geometry: [number, number][] = [];
+	for (const leg of route.legs) {
+		for (const pt of leg.points) {
+			geometry.push([pt.longitude, pt.latitude]);
+		}
+	}
+
+	const steps: RouteStep[] = [];
+	const instructions = route.guidance?.instructions || [];
+
+	for (let i = 0; i < instructions.length; i++) {
+		const inst = instructions[i];
+		const mapped = TOMTOM_MANEUVER_MAP[inst.maneuver] || { maneuver: 'continue', modifier: 'straight' };
+
+		const nextOffset = instructions[i + 1]?.routeOffsetInMeters ?? summary.lengthInMeters;
+		const stepDistance = nextOffset - (inst.routeOffsetInMeters || 0);
+
+		const ratio = summary.lengthInMeters > 0 ? stepDistance / summary.lengthInMeters : 0;
+		const stepDuration = summary.travelTimeInSeconds * ratio;
+
+		steps.push({
+			instruction: inst.message || inst.street || 'Continuer',
+			maneuver: mapped.maneuver,
+			modifier: mapped.modifier,
+			distanceM: stepDistance,
+			durationS: stepDuration,
+			name: inst.street || '',
+			location: [inst.point.longitude, inst.point.latitude]
+		});
+	}
+
+	if (steps.length === 0) {
+		steps.push({
+			instruction: 'Depart',
+			maneuver: 'depart',
+			modifier: null,
+			distanceM: summary.lengthInMeters,
+			durationS: summary.travelTimeInSeconds,
+			name: '',
+			location: geometry[0] || [fromLng, fromLat]
+		});
+	}
+
+	return {
+		geometry,
+		distanceM: summary.lengthInMeters,
+		durationS: summary.travelTimeInSeconds,
+		steps
+	};
+}
+
 async function calculateTomTomRoute(
 	fromLat: number,
 	fromLng: number,
@@ -94,69 +155,48 @@ async function calculateTomTomRoute(
 		url += '&avoid=motorways';
 	}
 
+	if (options.alternatives) {
+		url += '&maxAlternatives=3';
+	}
+
 	const res = await fetch(url);
 	if (!res.ok) throw new Error(`TomTom Routing ${res.status}`);
 
 	const data = await res.json();
 	if (!data.routes?.length) throw new Error('TomTom: no route');
 
-	const route = data.routes[0];
-	const summary = route.summary;
+	return parseTomTomRoute(data.routes[0], fromLat, fromLng);
+}
 
-	// Build geometry from leg points
-	const geometry: [number, number][] = [];
-	for (const leg of route.legs) {
-		for (const pt of leg.points) {
-			geometry.push([pt.longitude, pt.latitude]);
-		}
+/** Calculate route with alternatives via TomTom (returns all routes) */
+async function calculateTomTomRouteAlternatives(
+	fromLat: number,
+	fromLng: number,
+	toLat: number,
+	toLng: number,
+	options: RouteOptions
+): Promise<Route[]> {
+	let url = `https://api.tomtom.com/routing/1/calculateRoute/${fromLat},${fromLng}:${toLat},${toLng}/json` +
+		`?key=${TOMTOM_API_KEY}` +
+		`&traffic=true` +
+		`&travelMode=car` +
+		`&routeType=fastest` +
+		`&instructionsType=text` +
+		`&language=fr-FR` +
+		`&computeTravelTimeFor=all` +
+		`&maxAlternatives=3`;
+
+	if (options.avoidHighways) {
+		url += '&avoid=motorways';
 	}
 
-	// Build steps from guidance instructions
-	const steps: RouteStep[] = [];
-	const instructions = route.guidance?.instructions || [];
+	const res = await fetch(url);
+	if (!res.ok) throw new Error(`TomTom Routing ${res.status}`);
 
-	for (let i = 0; i < instructions.length; i++) {
-		const inst = instructions[i];
-		const mapped = TOMTOM_MANEUVER_MAP[inst.maneuver] || { maneuver: 'continue', modifier: 'straight' };
+	const data = await res.json();
+	if (!data.routes?.length) throw new Error('TomTom: no route');
 
-		// Distance for this step = offset to next instruction - offset of this one
-		const nextOffset = instructions[i + 1]?.routeOffsetInMeters ?? summary.lengthInMeters;
-		const stepDistance = nextOffset - (inst.routeOffsetInMeters || 0);
-
-		// Duration estimate proportional to distance
-		const ratio = summary.lengthInMeters > 0 ? stepDistance / summary.lengthInMeters : 0;
-		const stepDuration = summary.travelTimeInSeconds * ratio;
-
-		steps.push({
-			instruction: inst.message || inst.street || 'Continuer',
-			maneuver: mapped.maneuver,
-			modifier: mapped.modifier,
-			distanceM: stepDistance,
-			durationS: stepDuration,
-			name: inst.street || '',
-			location: [inst.point.longitude, inst.point.latitude]
-		});
-	}
-
-	// Ensure at least a depart step
-	if (steps.length === 0) {
-		steps.push({
-			instruction: 'Départ',
-			maneuver: 'depart',
-			modifier: null,
-			distanceM: summary.lengthInMeters,
-			durationS: summary.travelTimeInSeconds,
-			name: '',
-			location: geometry[0] || [fromLng, fromLat]
-		});
-	}
-
-	return {
-		geometry,
-		distanceM: summary.lengthInMeters,
-		durationS: summary.travelTimeInSeconds,
-		steps
-	};
+	return data.routes.map((r: any) => parseTomTomRoute(r, fromLat, fromLng));
 }
 
 // ── OSRM Fallback ──
@@ -245,29 +285,8 @@ function buildInstruction(maneuver: string, modifier: string | null, name: strin
 	return name ? `${parts}, ${name}` : parts;
 }
 
-async function calculateOsrmRoute(
-	fromLat: number,
-	fromLng: number,
-	toLat: number,
-	toLng: number,
-	options: RouteOptions
-): Promise<Route> {
-	let url = `${OSRM_BASE}/${fromLng},${fromLat};${toLng},${toLat}` +
-		`?overview=full&geometries=polyline6&steps=true&annotations=false`;
-
-	if (options.avoidHighways) {
-		url += '&exclude=motorway';
-	}
-
-	const res = await fetch(url);
-	if (!res.ok) throw new Error(`OSRM ${res.status}`);
-
-	const data = await res.json();
-	if (data.code !== 'Ok' || !data.routes?.length) {
-		throw new Error(`OSRM: ${data.code || 'no route'}`);
-	}
-
-	const route = data.routes[0];
+/** Parse a single OSRM route object */
+function parseOsrmRoute(route: any): Route {
 	const geometry = decodePolyline6(route.geometry);
 
 	const steps: RouteStep[] = [];
@@ -294,6 +313,57 @@ async function calculateOsrmRoute(
 	};
 }
 
+async function calculateOsrmRoute(
+	fromLat: number,
+	fromLng: number,
+	toLat: number,
+	toLng: number,
+	options: RouteOptions
+): Promise<Route> {
+	let url = `${OSRM_BASE}/${fromLng},${fromLat};${toLng},${toLat}` +
+		`?overview=full&geometries=polyline6&steps=true&annotations=false`;
+
+	if (options.avoidHighways) {
+		url += '&exclude=motorway';
+	}
+
+	const res = await fetch(url);
+	if (!res.ok) throw new Error(`OSRM ${res.status}`);
+
+	const data = await res.json();
+	if (data.code !== 'Ok' || !data.routes?.length) {
+		throw new Error(`OSRM: ${data.code || 'no route'}`);
+	}
+
+	return parseOsrmRoute(data.routes[0]);
+}
+
+/** Calculate route with alternatives via OSRM (returns all routes) */
+async function calculateOsrmRouteAlternatives(
+	fromLat: number,
+	fromLng: number,
+	toLat: number,
+	toLng: number,
+	options: RouteOptions
+): Promise<Route[]> {
+	let url = `${OSRM_BASE}/${fromLng},${fromLat};${toLng},${toLat}` +
+		`?overview=full&geometries=polyline6&steps=true&annotations=false&alternatives=3`;
+
+	if (options.avoidHighways) {
+		url += '&exclude=motorway';
+	}
+
+	const res = await fetch(url);
+	if (!res.ok) throw new Error(`OSRM ${res.status}`);
+
+	const data = await res.json();
+	if (data.code !== 'Ok' || !data.routes?.length) {
+		throw new Error(`OSRM: ${data.code || 'no route'}`);
+	}
+
+	return data.routes.map((r: any) => parseOsrmRoute(r));
+}
+
 // ── Public API ──
 
 /**
@@ -316,4 +386,37 @@ export async function calculateRoute(
 
 	// Fallback to OSRM (no traffic)
 	return calculateOsrmRoute(fromLat, fromLng, toLat, toLng, options);
+}
+
+/**
+ * Calculate multiple alternative routes.
+ * Returns an array of routes (1-4 options).
+ * Uses TomTom with OSRM fallback.
+ */
+export async function calculateRouteAlternatives(
+	fromLat: number,
+	fromLng: number,
+	toLat: number,
+	toLng: number,
+	options: RouteOptions = {}
+): Promise<Route[]> {
+	// Try TomTom first
+	try {
+		const routes = await calculateTomTomRouteAlternatives(fromLat, fromLng, toLat, toLng, options);
+		if (routes.length > 0) return routes;
+	} catch (e) {
+		console.warn('[routing] TomTom alternatives failed, falling back to OSRM:', e);
+	}
+
+	// Fallback to OSRM
+	try {
+		const routes = await calculateOsrmRouteAlternatives(fromLat, fromLng, toLat, toLng, options);
+		if (routes.length > 0) return routes;
+	} catch (e) {
+		console.warn('[routing] OSRM alternatives also failed:', e);
+	}
+
+	// Last resort: single route
+	const single = await calculateRoute(fromLat, fromLng, toLat, toLng, options);
+	return [single];
 }
