@@ -257,21 +257,21 @@
 				ctx.shadowBlur = 8;
 				ctx.shadowOffsetY = 3;
 
-				// Waze-style rounded chevron: pointed tip at top, rounded body, concave notch at bottom
+				// Waze-style rounded teardrop: pointed tip, smooth bezier sides, arcTo rounded bottom corners
 				ctx.beginPath();
 				ctx.moveTo(cx, 5);
-				// right side: tip → bottom-right (bezier for smooth taper)
-				ctx.bezierCurveTo(cx + 5, 18, cx + 22, 40, cx + 22, 52);
-				// bottom-right rounded corner
-				ctx.quadraticCurveTo(cx + 22, 59, cx + 14, 59);
-				// concave notch bottom-right → center
-				ctx.quadraticCurveTo(cx + 7, 52, cx, 47);
-				// concave notch center → bottom-left
-				ctx.quadraticCurveTo(cx - 7, 52, cx - 14, 59);
+				// right side: smooth bezier from tip outward and down
+				ctx.bezierCurveTo(cx + 5, 18, cx + 25, 40, cx + 25, 53);
+				// bottom-right rounded corner — arcTo gives a true tangent arc
+				ctx.arcTo(cx + 25, 62, cx + 13, 62, 10);
+				// concave notch: bottom-right to center
+				ctx.quadraticCurveTo(cx + 6, 54, cx, 49);
+				// concave notch: center to bottom-left
+				ctx.quadraticCurveTo(cx - 6, 54, cx - 13, 62);
 				// bottom-left rounded corner
-				ctx.quadraticCurveTo(cx - 22, 59, cx - 22, 52);
-				// left side: bottom-left → tip (bezier)
-				ctx.bezierCurveTo(cx - 22, 40, cx - 5, 18, cx, 5);
+				ctx.arcTo(cx - 25, 62, cx - 25, 53, 10);
+				// left side: back to tip
+				ctx.bezierCurveTo(cx - 25, 40, cx - 5, 18, cx, 5);
 				ctx.closePath();
 
 				ctx.fillStyle = '#0099FF';
@@ -288,10 +288,10 @@
 				ctx.save();
 				ctx.beginPath();
 				ctx.moveTo(cx, 10);
-				ctx.bezierCurveTo(cx + 3, 20, cx + 15, 36, cx + 15, 46);
-				ctx.quadraticCurveTo(cx + 8, 50, cx, 44);
-				ctx.quadraticCurveTo(cx - 8, 50, cx - 15, 46);
-				ctx.bezierCurveTo(cx - 15, 36, cx - 3, 20, cx, 10);
+				ctx.bezierCurveTo(cx + 3, 20, cx + 17, 38, cx + 17, 48);
+				ctx.quadraticCurveTo(cx + 9, 52, cx, 47);
+				ctx.quadraticCurveTo(cx - 9, 52, cx - 17, 48);
+				ctx.bezierCurveTo(cx - 17, 38, cx - 3, 20, cx, 10);
 				ctx.closePath();
 				ctx.fillStyle = 'rgba(255,255,255,0.18)';
 				ctx.fill();
