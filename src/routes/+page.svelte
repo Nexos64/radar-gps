@@ -187,32 +187,33 @@
 		width: 44px;
 		height: 44px;
 		border-radius: 50%;
-		background: rgba(30, 30, 46, 0.85);
-		backdrop-filter: blur(8px);
-		-webkit-backdrop-filter: blur(8px);
-		border: 1px solid rgba(255, 255, 255, 0.1);
+		background: rgba(36, 40, 48, 0.92);
+		backdrop-filter: blur(12px);
+		-webkit-backdrop-filter: blur(12px);
+		border: none;
 		color: #ffffff;
 		display: flex;
 		align-items: center;
 		justify-content: center;
 		cursor: pointer;
-		box-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
+		box-shadow: 0 2px 12px rgba(0, 0, 0, 0.25);
+		transition: transform 0.15s ease, background 0.15s ease;
 	}
 
 	.hamburger-btn:active {
-		background: rgba(30, 30, 46, 0.95);
-		transform: scale(0.95);
+		background: rgba(36, 40, 48, 1);
+		transform: scale(0.92);
 	}
 
 	.route-error {
 		margin-top: 12px;
-		padding: 10px 14px;
-		background: rgba(229, 57, 53, 0.15);
-		border: 1px solid rgba(229, 57, 53, 0.4);
-		border-radius: 10px;
-		color: #ff5252;
-		font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+		padding: 12px 14px;
+		background: rgba(255, 43, 43, 0.1);
+		border-left: 3px solid #FF2B2B;
+		border-radius: 12px;
+		color: #FF5252;
+		font-family: 'Nunito', -apple-system, BlinkMacSystemFont, sans-serif;
 		font-size: 13px;
-		font-weight: 500;
+		font-weight: 600;
 	}
 </style>

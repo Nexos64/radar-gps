@@ -94,13 +94,26 @@
 				<h2 class="section-title">Statut</h2>
 				<div class="status-grid">
 					<div class="status-item">
-						<span class="status-label">Signal GPS</span>
+						<div class="status-icon-row">
+							<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+								<circle cx="12" cy="12" r="3"/>
+								<path d="M12 2a10 10 0 0 1 10 10"/>
+								<path d="M12 6a6 6 0 0 1 6 6"/>
+							</svg>
+							<span class="status-label">Signal GPS</span>
+						</div>
 						<span class="status-value" class:status-ok={$gpsSignal === 'strong'} class:status-warn={$gpsSignal === 'weak'} class:status-err={$gpsSignal === 'lost' || $gpsSignal === 'off'}>
 							{$gpsSignal === 'strong' ? 'Fort' : $gpsSignal === 'weak' ? 'Faible' : $gpsSignal === 'lost' ? 'Perdu' : 'Off'}
 						</span>
 					</div>
 					<div class="status-item">
-						<span class="status-label">Luftop</span>
+						<div class="status-icon-row">
+							<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+								<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/>
+								<line x1="4" y1="22" x2="4" y2="15"/>
+							</svg>
+							<span class="status-label">Luftop</span>
+						</div>
 						<span class="status-value" class:status-ok={!$luftopStale} class:status-warn={$luftopStale}>
 							{$luftopStale ? 'Perime' : 'OK'}
 						</span>
@@ -152,7 +165,13 @@
 					{/if}
 				</div>
 				{#if $errorLog.length === 0}
-					<div class="no-errors">Aucune erreur</div>
+					<div class="no-errors">
+						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1FE093" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right:8px;vertical-align:-3px;">
+							<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+							<polyline points="22 4 12 14.01 9 11.01"/>
+						</svg>
+						Aucune erreur
+					</div>
 				{:else}
 					<div class="error-list">
 						{#each $errorLog as entry}
@@ -176,7 +195,7 @@
 		position: fixed;
 		inset: 0;
 		z-index: 55;
-		background: #1e1e2e;
+		background: #1B1D21;
 		display: flex;
 		flex-direction: column;
 		overflow: hidden;
@@ -188,14 +207,14 @@
 		gap: 12px;
 		padding: 16px 16px 12px;
 		padding-top: calc(env(safe-area-inset-top, 16px) + 8px);
-		border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+		border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 		flex-shrink: 0;
 	}
 
 	.back-btn {
 		background: none;
 		border: none;
-		color: #4285F4;
+		color: #0099FF;
 		padding: 4px;
 		cursor: pointer;
 		display: flex;
@@ -203,9 +222,9 @@
 	}
 
 	h1 {
-		font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+		font-family: 'Nunito', -apple-system, BlinkMacSystemFont, sans-serif;
 		font-size: 20px;
-		font-weight: 700;
+		font-weight: 800;
 		color: #ffffff;
 		margin: 0;
 	}
@@ -218,24 +237,24 @@
 	}
 
 	.section {
-		margin-top: 24px;
+		margin-top: 28px;
 	}
 
 	.section-title {
-		font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+		font-family: 'Nunito', -apple-system, BlinkMacSystemFont, sans-serif;
 		font-size: 13px;
-		font-weight: 600;
-		color: rgba(255, 255, 255, 0.4);
+		font-weight: 700;
+		color: rgba(255, 255, 255, 0.35);
 		text-transform: uppercase;
 		letter-spacing: 0.5px;
-		margin: 0 0 12px;
+		margin: 0 0 14px;
 	}
 
 	.section-header {
 		display: flex;
 		justify-content: space-between;
 		align-items: center;
-		margin-bottom: 12px;
+		margin-bottom: 14px;
 	}
 
 	.section-header .section-title {
@@ -251,42 +270,50 @@
 
 	.login-input {
 		width: 100%;
-		background: rgba(255, 255, 255, 0.08);
-		border: none;
-		border-radius: 10px;
-		padding: 14px;
+		background: rgba(255, 255, 255, 0.06);
+		border: 1px solid rgba(255, 255, 255, 0.08);
+		border-radius: 14px;
+		padding: 14px 16px;
 		color: #ffffff;
-		font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+		font-family: 'Nunito', -apple-system, BlinkMacSystemFont, sans-serif;
 		font-size: 15px;
+		font-weight: 600;
 		outline: none;
 		box-sizing: border-box;
+		transition: border-color 0.2s ease;
+	}
+
+	.login-input:focus {
+		border-color: #0099FF;
 	}
 
 	.login-input::placeholder {
-		color: rgba(255, 255, 255, 0.35);
-	}
-
-	.login-error {
-		color: #ff5252;
-		font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-		font-size: 13px;
+		color: rgba(255, 255, 255, 0.3);
 		font-weight: 500;
 	}
 
+	.login-error {
+		color: #FF5252;
+		font-family: 'Nunito', -apple-system, BlinkMacSystemFont, sans-serif;
+		font-size: 13px;
+		font-weight: 600;
+	}
+
 	.login-btn {
-		background: #4285F4;
+		background: #0099FF;
 		border: none;
-		border-radius: 10px;
+		border-radius: 14px;
 		padding: 14px;
 		color: #ffffff;
-		font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+		font-family: 'Nunito', -apple-system, BlinkMacSystemFont, sans-serif;
 		font-size: 15px;
-		font-weight: 600;
+		font-weight: 700;
 		cursor: pointer;
+		transition: transform 0.15s ease;
 	}
 
 	.login-btn:active {
-		background: #3367d6;
+		transform: scale(0.98);
 	}
 
 	/* Status */
@@ -298,29 +325,36 @@
 	.status-item {
 		flex: 1;
 		background: rgba(255, 255, 255, 0.04);
-		border-radius: 12px;
-		padding: 14px;
+		border-radius: 16px;
+		padding: 16px;
 		display: flex;
 		flex-direction: column;
-		gap: 6px;
+		gap: 8px;
+	}
+
+	.status-icon-row {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		color: rgba(255, 255, 255, 0.4);
 	}
 
 	.status-label {
-		font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+		font-family: 'Nunito', -apple-system, BlinkMacSystemFont, sans-serif;
 		font-size: 12px;
-		color: rgba(255, 255, 255, 0.45);
-		font-weight: 500;
+		color: rgba(255, 255, 255, 0.4);
+		font-weight: 600;
 	}
 
 	.status-value {
-		font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-		font-size: 15px;
-		font-weight: 700;
+		font-family: 'Nunito', -apple-system, BlinkMacSystemFont, sans-serif;
+		font-size: 16px;
+		font-weight: 800;
 	}
 
-	.status-ok { color: #4caf50; }
-	.status-warn { color: #ff9800; }
-	.status-err { color: #ff5252; }
+	.status-ok { color: #1FE093; }
+	.status-warn { color: #F08000; }
+	.status-err { color: #FF5252; }
 
 	/* Radar counts */
 	.radar-grid {
@@ -331,76 +365,78 @@
 
 	.radar-card {
 		background: rgba(255, 255, 255, 0.04);
-		border-radius: 12px;
-		padding: 16px;
+		border-radius: 16px;
+		padding: 18px;
 		text-align: center;
 	}
 
 	.radar-card.total {
-		background: rgba(66, 133, 244, 0.12);
+		background: rgba(0, 153, 255, 0.1);
 	}
 
 	.radar-count {
-		font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+		font-family: 'Nunito', -apple-system, BlinkMacSystemFont, sans-serif;
 		font-size: 28px;
-		font-weight: 800;
+		font-weight: 900;
 		color: #ffffff;
 		line-height: 1;
 	}
 
 	.radar-source {
-		font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+		font-family: 'Nunito', -apple-system, BlinkMacSystemFont, sans-serif;
 		font-size: 12px;
-		font-weight: 600;
-		color: rgba(255, 255, 255, 0.45);
+		font-weight: 700;
+		color: rgba(255, 255, 255, 0.4);
 		margin-top: 6px;
 		text-transform: uppercase;
 		letter-spacing: 0.5px;
 	}
 
 	.loading-text {
-		font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+		font-family: 'Nunito', -apple-system, BlinkMacSystemFont, sans-serif;
 		font-size: 13px;
+		font-weight: 600;
 		color: rgba(255, 255, 255, 0.4);
 		padding: 12px 0;
 	}
 
 	.refresh-btn {
-		background: rgba(255, 255, 255, 0.08);
+		background: rgba(255, 255, 255, 0.06);
 		border: none;
-		color: #4285F4;
-		width: 32px;
-		height: 32px;
-		border-radius: 8px;
+		color: #0099FF;
+		width: 36px;
+		height: 36px;
+		border-radius: 10px;
 		display: flex;
 		align-items: center;
 		justify-content: center;
 		cursor: pointer;
+		transition: background 0.15s ease;
 	}
 
 	.refresh-btn:active {
-		background: rgba(255, 255, 255, 0.15);
+		background: rgba(255, 255, 255, 0.12);
 	}
 
 	/* Error log */
 	.no-errors {
-		font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+		font-family: 'Nunito', -apple-system, BlinkMacSystemFont, sans-serif;
 		font-size: 14px;
-		color: #4caf50;
-		padding: 16px;
-		background: rgba(76, 175, 80, 0.08);
-		border-radius: 12px;
+		color: #1FE093;
+		padding: 18px;
+		background: rgba(31, 224, 147, 0.06);
+		border-radius: 16px;
 		text-align: center;
-		font-weight: 600;
+		font-weight: 700;
 	}
 
 	.clear-btn {
 		background: none;
 		border: none;
-		color: #ff5252;
-		font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+		color: #FF5252;
+		font-family: 'Nunito', -apple-system, BlinkMacSystemFont, sans-serif;
 		font-size: 13px;
-		font-weight: 600;
+		font-weight: 700;
 		cursor: pointer;
 		padding: 4px 8px;
 	}
@@ -414,10 +450,10 @@
 	}
 
 	.error-item {
-		background: rgba(255, 82, 82, 0.08);
-		border: 1px solid rgba(255, 82, 82, 0.15);
-		border-radius: 10px;
-		padding: 12px;
+		background: rgba(255, 43, 43, 0.06);
+		border-left: 3px solid rgba(255, 43, 43, 0.4);
+		border-radius: 12px;
+		padding: 14px;
 	}
 
 	.error-head {
@@ -428,24 +464,25 @@
 	}
 
 	.error-source {
-		font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+		font-family: 'Nunito', -apple-system, BlinkMacSystemFont, sans-serif;
 		font-size: 12px;
-		font-weight: 700;
-		color: #ff5252;
+		font-weight: 800;
+		color: #FF5252;
 		text-transform: uppercase;
 		letter-spacing: 0.3px;
 	}
 
 	.error-time {
-		font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+		font-family: 'Nunito', -apple-system, BlinkMacSystemFont, sans-serif;
 		font-size: 11px;
-		color: rgba(255, 255, 255, 0.35);
+		color: rgba(255, 255, 255, 0.3);
 	}
 
 	.error-msg {
-		font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+		font-family: 'Nunito', -apple-system, BlinkMacSystemFont, sans-serif;
 		font-size: 13px;
-		color: rgba(255, 255, 255, 0.7);
+		font-weight: 600;
+		color: rgba(255, 255, 255, 0.6);
 		word-break: break-word;
 	}
 </style>

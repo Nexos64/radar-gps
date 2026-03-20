@@ -14,7 +14,7 @@
 	<div class="speed-overlay" style="bottom: {bottomPx}px;">
 		<!-- Vitesse actuelle -->
 		<div class="speed-current" class:over>
-			<span class="speed-value">{$speedKmh ?? '—'}</span>
+			<span class="speed-value">{$speedKmh ?? '--'}</span>
 			<span class="speed-unit">km/h</span>
 		</div>
 
@@ -49,35 +49,36 @@
 		justify-content: center;
 		width: 72px;
 		height: 72px;
-		background: rgba(20, 20, 40, 0.9);
-		border-radius: 16px;
-		backdrop-filter: blur(10px);
-		-webkit-backdrop-filter: blur(10px);
-		border: 2px solid rgba(255, 255, 255, 0.15);
+		background: rgba(36, 40, 48, 0.92);
+		border-radius: 18px;
+		backdrop-filter: blur(12px);
+		-webkit-backdrop-filter: blur(12px);
+		border: 2px solid rgba(255, 255, 255, 0.1);
+		box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
 	}
 
 	.speed-current.over {
-		border-color: #e53935;
-		background: rgba(60, 20, 20, 0.95);
+		border-color: #FF2B2B;
+		background: rgba(50, 25, 25, 0.95);
 	}
 
 	.speed-value {
-		font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+		font-family: 'Nunito', -apple-system, BlinkMacSystemFont, sans-serif;
 		font-size: 28px;
-		font-weight: 800;
+		font-weight: 900;
 		color: #ffffff;
 		line-height: 1;
 	}
 
 	.speed-current.over .speed-value {
-		color: #ff5252;
+		color: #FF5252;
 	}
 
 	.speed-unit {
-		font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+		font-family: 'Nunito', -apple-system, BlinkMacSystemFont, sans-serif;
 		font-size: 10px;
-		font-weight: 600;
-		color: rgba(255, 255, 255, 0.5);
+		font-weight: 700;
+		color: rgba(255, 255, 255, 0.4);
 		text-transform: uppercase;
 		letter-spacing: 0.5px;
 	}
@@ -93,14 +94,15 @@
 		height: 44px;
 		border-radius: 50%;
 		background: #ffffff;
-		border: 3px solid #e53935;
+		border: 3.5px solid #FF2B2B;
 		display: flex;
 		align-items: center;
 		justify-content: center;
+		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
 	}
 
 	.limit-value {
-		font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+		font-family: 'Nunito', -apple-system, BlinkMacSystemFont, sans-serif;
 		font-size: 18px;
 		font-weight: 900;
 		color: #1a1a1a;

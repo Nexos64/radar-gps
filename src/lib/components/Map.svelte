@@ -171,19 +171,19 @@
 		}
 
 		const baseLayers = layersWithPartialCustomTheme('protomaps', 'dark', {
-			city_label: '#666666',
-			city_label_halo: '#1f1f1f',
+			city_label: '#777777',
+			city_label_halo: '#1a1c20',
 			state_label: '#666666',
-			state_label_halo: '#1f1f1f',
-			country_label: '#666666',
+			state_label_halo: '#1a1c20',
+			country_label: '#777777',
 			subplace_label: '#666666',
-			subplace_label_halo: '#1f1f1f',
-			address_label: '#666666',
-			address_label_halo: '#1f1f1f',
-			ocean_label: '#666666',
-			peak_label: '#666666',
-			waterway_label: '#666666',
-			buildings: '#222222',
+			subplace_label_halo: '#1a1c20',
+			address_label: '#555555',
+			address_label_halo: '#1a1c20',
+			ocean_label: '#555555',
+			peak_label: '#555555',
+			waterway_label: '#555555',
+			buildings: '#252830',
 		}, 'fr');
 
 		const mapLayers = baseLayers.map((layer: any) => {
@@ -261,7 +261,7 @@
 				ctx.lineTo(cx + 22, 54);
 				ctx.lineTo(cx - 22, 54);
 				ctx.closePath();
-				ctx.fillStyle = '#4285F4';
+				ctx.fillStyle = '#0099FF';
 				ctx.fill();
 				ctx.restore();
 
@@ -290,9 +290,9 @@
 				source: 'route',
 				layout: { 'line-join': 'round', 'line-cap': 'round' },
 				paint: {
-					'line-color': '#1a5276',
+					'line-color': '#005588',
 					'line-width': 8,
-					'line-opacity': 0.8
+					'line-opacity': 0.7
 				}
 			});
 
@@ -302,7 +302,7 @@
 				source: 'route',
 				layout: { 'line-join': 'round', 'line-cap': 'round' },
 				paint: {
-					'line-color': '#4285F4',
+					'line-color': '#0099FF',
 					'line-width': 5,
 					'line-opacity': 0.9
 				}
@@ -320,9 +320,9 @@
 				source: 'user-position',
 				paint: {
 					'circle-radius': ['get', 'accuracyRadius'],
-					'circle-color': '#4285F4',
+					'circle-color': '#0099FF',
 					'circle-opacity': 0.15,
-					'circle-stroke-color': '#4285F4',
+					'circle-stroke-color': '#0099FF',
 					'circle-stroke-opacity': 0.3,
 					'circle-stroke-width': 1,
 					'circle-pitch-alignment': 'map'
@@ -377,14 +377,14 @@
 			pinCtx.beginPath();
 			pinCtx.arc(pinSize / 2 + 1, pinSize * 0.38 + 2, 14, 0, Math.PI * 2);
 			pinCtx.fill();
-			pinCtx.fillStyle = '#4285F4';
+			pinCtx.fillStyle = '#0099FF';
 			pinCtx.beginPath();
 			pinCtx.arc(pinSize / 2, pinSize * 0.38, 14, 0, Math.PI * 2);
 			pinCtx.fill();
 			pinCtx.strokeStyle = '#ffffff';
 			pinCtx.lineWidth = 2.5;
 			pinCtx.stroke();
-			pinCtx.fillStyle = '#4285F4';
+			pinCtx.fillStyle = '#0099FF';
 			pinCtx.beginPath();
 			pinCtx.moveTo(pinSize / 2 - 7, pinSize * 0.5);
 			pinCtx.lineTo(pinSize / 2, pinSize - 4);
@@ -640,15 +640,16 @@
 		transform: translateX(-50%);
 		z-index: 20;
 		padding: 10px 20px;
-		background: rgba(229, 57, 53, 0.9);
+		background: rgba(255, 43, 43, 0.9);
 		color: #fff;
-		font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+		font-family: 'Nunito', -apple-system, BlinkMacSystemFont, sans-serif;
 		font-size: 13px;
-		font-weight: 600;
+		font-weight: 700;
 		border-radius: 24px;
-		backdrop-filter: blur(8px);
-		-webkit-backdrop-filter: blur(8px);
+		backdrop-filter: blur(12px);
+		-webkit-backdrop-filter: blur(12px);
 		white-space: nowrap;
 		pointer-events: none;
+		box-shadow: 0 2px 12px rgba(255, 43, 43, 0.3);
 	}
 </style>

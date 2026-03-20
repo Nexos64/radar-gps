@@ -14,12 +14,12 @@
 	}>();
 
 	/**
-	 * Bottom sheet à 3 états :
+	 * Bottom sheet a 3 etats :
 	 *   - closed : seul le handle + barre de recherche sont visibles (~80px)
-	 *   - half   : mi-hauteur (~45% de l'écran)
-	 *   - full   : plein écran (sauf safe area top)
+	 *   - half   : mi-hauteur (~45% de l'ecran)
+	 *   - full   : plein ecran (sauf safe area top)
 	 *
-	 * Glissement vertical (touch) pour changer d'état.
+	 * Glissement vertical (touch) pour changer d'etat.
 	 */
 
 	export let state: SheetState = 'closed';
@@ -33,7 +33,7 @@
 	let dragging = false;
 	let windowHeight = 0;
 
-	// Positions en px depuis le haut de l'écran
+	// Positions en px depuis le haut de l'ecran
 	$: closedTop = windowHeight - 80;
 	$: halfTop = windowHeight * 0.55;
 	$: fullTop = 20; // safe area
@@ -69,7 +69,7 @@
 		if (!dragging) return;
 		dragging = false;
 
-		// Déterminer l'état le plus proche
+		// Determiner l'etat le plus proche
 		const distClosed = Math.abs(currentTranslate - closedTop);
 		const distHalf = Math.abs(currentTranslate - halfTop);
 		const distFull = Math.abs(currentTranslate - fullTop);
@@ -168,7 +168,12 @@
 				<div class="shortcuts">
 					{#if $settings.home}
 						<button class="shortcut-btn" on:click={() => selectShortcut('home')}>
-							<span class="shortcut-icon">🏠</span>
+							<div class="shortcut-icon-wrap home">
+								<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+									<path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+									<polyline points="9 22 9 12 15 12 15 22"/>
+								</svg>
+							</div>
 							<div class="shortcut-info">
 								<div class="shortcut-label">Maison</div>
 								<div class="shortcut-detail">{$settings.home.label}</div>
@@ -177,7 +182,12 @@
 					{/if}
 					{#if $settings.work}
 						<button class="shortcut-btn" on:click={() => selectShortcut('work')}>
-							<span class="shortcut-icon">💼</span>
+							<div class="shortcut-icon-wrap work">
+								<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+									<rect x="2" y="7" width="20" height="14" rx="2" ry="2"/>
+									<path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>
+								</svg>
+							</div>
 							<div class="shortcut-info">
 								<div class="shortcut-label">Travail</div>
 								<div class="shortcut-detail">{$settings.work.label}</div>
@@ -191,16 +201,18 @@
 			{#if $routeHistory.length > 0}
 				<div class="history-section">
 					<div class="history-header">
-						<span class="history-title">Récents</span>
+						<span class="history-title">Recents</span>
 						<button class="history-clear" on:click={clearHistory}>Effacer</button>
 					</div>
 					<div class="history-list">
 						{#each $routeHistory as entry (entry.id)}
 							<button class="history-item" on:click={() => selectHistory(entry)}>
-								<svg class="history-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-									<circle cx="12" cy="12" r="10"/>
-									<polyline points="12 6 12 12 16 14"/>
-								</svg>
+								<div class="history-icon-wrap">
+									<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+										<circle cx="12" cy="12" r="10"/>
+										<polyline points="12 6 12 12 16 14"/>
+									</svg>
+								</div>
 								<div class="history-info">
 									<div class="history-label">{entry.label}</div>
 									<div class="history-detail">{entry.detail}</div>
@@ -230,9 +242,9 @@
 		top: 0;
 		height: 100vh;
 		z-index: 40;
-		background: #1e1e2e;
+		background: #242830;
 		border-radius: 20px 20px 0 0;
-		box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.5);
+		box-shadow: 0 -2px 20px rgba(0, 0, 0, 0.4);
 		display: flex;
 		flex-direction: column;
 		touch-action: none;
@@ -248,10 +260,10 @@
 	}
 
 	.handle {
-		width: 40px;
+		width: 36px;
 		height: 4px;
 		border-radius: 2px;
-		background: rgba(255, 255, 255, 0.3);
+		background: rgba(255, 255, 255, 0.2);
 	}
 
 	.sheet-content {
@@ -274,22 +286,38 @@
 		flex: 1;
 		display: flex;
 		align-items: center;
-		gap: 10px;
-		padding: 12px;
-		background: rgba(255, 255, 255, 0.06);
+		gap: 12px;
+		padding: 14px;
+		background: rgba(255, 255, 255, 0.05);
 		border: none;
-		border-radius: 12px;
+		border-radius: 16px;
 		cursor: pointer;
 		text-align: left;
+		transition: background 0.15s ease;
 	}
 
 	.shortcut-btn:active {
 		background: rgba(255, 255, 255, 0.1);
 	}
 
-	.shortcut-icon {
-		font-size: 20px;
+	.shortcut-icon-wrap {
+		width: 40px;
+		height: 40px;
+		border-radius: 12px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
 		flex-shrink: 0;
+	}
+
+	.shortcut-icon-wrap.home {
+		background: rgba(0, 153, 255, 0.15);
+		color: #0099FF;
+	}
+
+	.shortcut-icon-wrap.work {
+		background: rgba(240, 128, 0, 0.15);
+		color: #F08000;
 	}
 
 	.shortcut-info {
@@ -298,14 +326,14 @@
 	}
 
 	.shortcut-label {
-		font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+		font-family: 'Nunito', -apple-system, BlinkMacSystemFont, sans-serif;
 		font-size: 14px;
-		font-weight: 600;
+		font-weight: 700;
 		color: #ffffff;
 	}
 
 	.shortcut-detail {
-		font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+		font-family: 'Nunito', -apple-system, BlinkMacSystemFont, sans-serif;
 		font-size: 11px;
 		color: rgba(255, 255, 255, 0.4);
 		white-space: nowrap;
@@ -315,7 +343,7 @@
 
 	/* History */
 	.history-section {
-		margin-top: 20px;
+		margin-top: 24px;
 	}
 
 	.history-header {
@@ -326,10 +354,10 @@
 	}
 
 	.history-title {
-		font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+		font-family: 'Nunito', -apple-system, BlinkMacSystemFont, sans-serif;
 		font-size: 13px;
-		font-weight: 600;
-		color: rgba(255, 255, 255, 0.4);
+		font-weight: 700;
+		color: rgba(255, 255, 255, 0.35);
 		text-transform: uppercase;
 		letter-spacing: 0.5px;
 	}
@@ -337,9 +365,10 @@
 	.history-clear {
 		background: none;
 		border: none;
-		color: rgba(255, 255, 255, 0.35);
-		font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-		font-size: 12px;
+		color: #0099FF;
+		font-family: 'Nunito', -apple-system, BlinkMacSystemFont, sans-serif;
+		font-size: 13px;
+		font-weight: 700;
 		cursor: pointer;
 		padding: 4px 8px;
 	}
@@ -352,22 +381,30 @@
 	.history-item {
 		display: flex;
 		align-items: center;
-		gap: 12px;
-		padding: 12px 0;
+		gap: 14px;
+		padding: 14px 0;
 		border: none;
 		border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 		background: none;
 		cursor: pointer;
 		text-align: left;
 		width: 100%;
+		transition: background 0.15s ease;
 	}
 
 	.history-item:active {
 		background: rgba(255, 255, 255, 0.04);
 	}
 
-	.history-icon {
-		color: rgba(255, 255, 255, 0.3);
+	.history-icon-wrap {
+		width: 36px;
+		height: 36px;
+		border-radius: 10px;
+		background: rgba(255, 255, 255, 0.06);
+		color: rgba(255, 255, 255, 0.4);
+		display: flex;
+		align-items: center;
+		justify-content: center;
 		flex-shrink: 0;
 	}
 
@@ -377,14 +414,14 @@
 	}
 
 	.history-label {
-		font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+		font-family: 'Nunito', -apple-system, BlinkMacSystemFont, sans-serif;
 		font-size: 14px;
-		font-weight: 600;
+		font-weight: 700;
 		color: #ffffff;
 	}
 
 	.history-detail {
-		font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+		font-family: 'Nunito', -apple-system, BlinkMacSystemFont, sans-serif;
 		font-size: 12px;
 		color: rgba(255, 255, 255, 0.4);
 		white-space: nowrap;
@@ -393,9 +430,10 @@
 	}
 
 	.history-time {
-		font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+		font-family: 'Nunito', -apple-system, BlinkMacSystemFont, sans-serif;
 		font-size: 11px;
-		color: rgba(255, 255, 255, 0.3);
+		font-weight: 600;
+		color: rgba(255, 255, 255, 0.25);
 		flex-shrink: 0;
 	}
 </style>

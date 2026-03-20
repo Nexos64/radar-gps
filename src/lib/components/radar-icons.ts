@@ -3,7 +3,7 @@ import type { RadarType } from '$lib/types';
 
 const ICON_SIZE = 48;
 
-/** Draw a modern camera icon (outline style, white on dark background) */
+/** Draw a modern camera icon — flat design with Waze-inspired orange circle */
 function renderCameraIcon(): ImageData {
 	const canvas = document.createElement('canvas');
 	canvas.width = ICON_SIZE;
@@ -11,18 +11,21 @@ function renderCameraIcon(): ImageData {
 	const ctx = canvas.getContext('2d')!;
 	const cx = ICON_SIZE / 2;
 	const cy = ICON_SIZE / 2;
+	const r = ICON_SIZE / 2 - 2;
 
-	// Dark semi-transparent circle background for visibility
+	// Orange circle background
 	ctx.beginPath();
-	ctx.arc(cx, cy, ICON_SIZE / 2 - 2, 0, Math.PI * 2);
-	ctx.fillStyle = 'rgba(30, 30, 30, 0.85)';
+	ctx.arc(cx, cy, r, 0, Math.PI * 2);
+	ctx.fillStyle = '#F08000';
 	ctx.fill();
-	ctx.strokeStyle = '#ffffff';
-	ctx.lineWidth = 2;
+
+	// Subtle border
+	ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+	ctx.lineWidth = 1.5;
 	ctx.stroke();
 
 	// Camera body — rounded rectangle
-	const bw = 24, bh = 16;
+	const bw = 22, bh = 14;
 	const bx = cx - bw / 2, by = cy - bh / 2 + 2;
 	const br = 3;
 	ctx.beginPath();
@@ -36,9 +39,8 @@ function renderCameraIcon(): ImageData {
 	ctx.lineTo(bx, by + br);
 	ctx.quadraticCurveTo(bx, by, bx + br, by);
 	ctx.closePath();
-	ctx.strokeStyle = '#ffffff';
-	ctx.lineWidth = 2.2;
-	ctx.stroke();
+	ctx.fillStyle = '#ffffff';
+	ctx.fill();
 
 	// Camera bump on top (viewfinder)
 	ctx.beginPath();
@@ -46,27 +48,25 @@ function renderCameraIcon(): ImageData {
 	ctx.lineTo(cx - 3, by - 5);
 	ctx.lineTo(cx + 3, by - 5);
 	ctx.lineTo(cx + 5, by);
-	ctx.strokeStyle = '#ffffff';
-	ctx.lineWidth = 2.2;
-	ctx.stroke();
+	ctx.fillStyle = '#ffffff';
+	ctx.fill();
 
-	// Lens circle
+	// Lens circle (orange on white)
 	ctx.beginPath();
-	ctx.arc(cx, cy + 2, 5.5, 0, Math.PI * 2);
-	ctx.strokeStyle = '#ffffff';
-	ctx.lineWidth = 2;
-	ctx.stroke();
+	ctx.arc(cx, cy + 2, 5, 0, Math.PI * 2);
+	ctx.fillStyle = '#F08000';
+	ctx.fill();
 
-	// Small dot (flash/sensor) top right
+	// Inner lens dot
 	ctx.beginPath();
-	ctx.arc(bx + bw - 5, by + 4.5, 1.5, 0, Math.PI * 2);
+	ctx.arc(cx, cy + 2, 2, 0, Math.PI * 2);
 	ctx.fillStyle = '#ffffff';
 	ctx.fill();
 
 	return ctx.getImageData(0, 0, ICON_SIZE, ICON_SIZE);
 }
 
-/** Draw a police officer icon (cap + silhouette) on blue circle */
+/** Draw a police icon — blue circle with shield */
 function renderPoliceIcon(): ImageData {
 	const canvas = document.createElement('canvas');
 	canvas.width = ICON_SIZE;
@@ -74,62 +74,36 @@ function renderPoliceIcon(): ImageData {
 	const ctx = canvas.getContext('2d')!;
 	const cx = ICON_SIZE / 2;
 	const cy = ICON_SIZE / 2;
-	const r = ICON_SIZE / 2 - 3;
+	const r = ICON_SIZE / 2 - 2;
 
 	// Blue circle background
 	ctx.beginPath();
 	ctx.arc(cx, cy, r, 0, Math.PI * 2);
-	ctx.fillStyle = '#1565c0';
+	ctx.fillStyle = '#0099FF';
 	ctx.fill();
-	ctx.strokeStyle = '#ffffff';
-	ctx.lineWidth = 2.5;
+
+	// Subtle border
+	ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+	ctx.lineWidth = 1.5;
 	ctx.stroke();
 
-	// Clip to circle so nothing overflows
-	ctx.save();
+	// Shield shape (white)
+	ctx.fillStyle = '#ffffff';
 	ctx.beginPath();
-	ctx.arc(cx, cy, r - 1, 0, Math.PI * 2);
-	ctx.clip();
-
-	const white = '#ffffff';
-
-	// Hat brim (wide ellipse)
-	ctx.fillStyle = white;
-	ctx.beginPath();
-	ctx.ellipse(cx, cy - 5, 13, 4, 0, 0, Math.PI * 2);
-	ctx.fill();
-
-	// Hat top (trapezoid)
-	ctx.beginPath();
-	ctx.moveTo(cx - 9, cy - 6);
-	ctx.lineTo(cx - 6, cy - 16);
-	ctx.lineTo(cx + 6, cy - 16);
-	ctx.lineTo(cx + 9, cy - 6);
+	ctx.moveTo(cx, cy - 12);
+	ctx.lineTo(cx + 10, cy - 7);
+	ctx.lineTo(cx + 10, cy + 2);
+	ctx.quadraticCurveTo(cx + 9, cy + 10, cx, cy + 14);
+	ctx.quadraticCurveTo(cx - 9, cy + 10, cx - 10, cy + 2);
+	ctx.lineTo(cx - 10, cy - 7);
 	ctx.closePath();
 	ctx.fill();
 
-	// Hat badge (gold dot)
+	// Inner shield detail (blue star-like mark)
+	ctx.fillStyle = '#0099FF';
 	ctx.beginPath();
-	ctx.arc(cx, cy - 11, 2.2, 0, Math.PI * 2);
-	ctx.fillStyle = '#FFD54F';
+	ctx.arc(cx, cy + 1, 4, 0, Math.PI * 2);
 	ctx.fill();
-
-	// Head
-	ctx.fillStyle = white;
-	ctx.beginPath();
-	ctx.arc(cx, cy + 2, 6, 0, Math.PI * 2);
-	ctx.fill();
-
-	// Shoulders / body
-	ctx.beginPath();
-	ctx.moveTo(cx - 15, cy + 22);
-	ctx.quadraticCurveTo(cx - 14, cy + 9, cx - 6, cy + 9);
-	ctx.lineTo(cx + 6, cy + 9);
-	ctx.quadraticCurveTo(cx + 14, cy + 9, cx + 15, cy + 22);
-	ctx.closePath();
-	ctx.fill();
-
-	ctx.restore();
 
 	return ctx.getImageData(0, 0, ICON_SIZE, ICON_SIZE);
 }

@@ -3,7 +3,7 @@
 	<head>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-		<meta name="theme-color" content="#1a1a2e" />
+		<meta name="theme-color" content="#1B1D21" />
 		<meta name="apple-mobile-web-app-capable" content="yes" />
 		<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 		<link rel="manifest" href="/manifest.json" />
@@ -13,9 +13,9 @@
 	</head>
 	<body data-sveltekit-preload-data="hover">
 		<!-- Loading splash visible until SvelteKit hydrates -->
-		<div id="app-splash" style="position:fixed;inset:0;z-index:99999;background:#1a1a2e;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:16px;">
-			<div style="width:48px;height:48px;border:3px solid rgba(66,133,244,0.3);border-top-color:#4285F4;border-radius:50%;animation:sp .8s linear infinite;"></div>
-			<div style="color:rgba(255,255,255,0.5);font:500 14px -apple-system,sans-serif;">Radar GPS</div>
+		<div id="app-splash" style="position:fixed;inset:0;z-index:99999;background:#1B1D21;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:16px;">
+			<div style="width:48px;height:48px;border:3px solid rgba(0,153,255,0.25);border-top-color:#0099FF;border-radius:50%;animation:sp .8s linear infinite;"></div>
+			<div style="color:rgba(255,255,255,0.5);font:600 14px 'Nunito',-apple-system,sans-serif;letter-spacing:0.5px;">Radar GPS</div>
 			<style>@keyframes sp{to{transform:rotate(360deg)}}</style>
 		</div>
 		<div style="display: contents">%sveltekit.body%</div>

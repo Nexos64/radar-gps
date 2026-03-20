@@ -25,20 +25,20 @@
 		height: 48px;
 		border-radius: 50%;
 		border: none;
-		background: rgba(20, 20, 40, 0.9);
-		backdrop-filter: blur(10px);
-		-webkit-backdrop-filter: blur(10px);
-		color: #4285F4;
+		background: rgba(36, 40, 48, 0.92);
+		backdrop-filter: blur(12px);
+		-webkit-backdrop-filter: blur(12px);
+		color: #0099FF;
 		display: flex;
 		align-items: center;
 		justify-content: center;
 		cursor: pointer;
-		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+		box-shadow: 0 2px 12px rgba(0, 0, 0, 0.25);
 		transition: bottom 0.3s cubic-bezier(0.4, 0, 0.2, 1), transform 0.15s ease, background 0.15s ease;
 	}
 
 	.recenter-btn:active {
 		transform: scale(0.9);
-		background: rgba(66, 133, 244, 0.3);
+		background: rgba(0, 153, 255, 0.2);
 	}
 </style>
