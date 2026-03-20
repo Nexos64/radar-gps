@@ -243,7 +243,7 @@
 			// ── Register radar icons ──
 			registerRadarIcons(map);
 
-			// ── Navigation arrow icon (always used) — solid blue triangle ──
+			// ── Navigation arrow icon — Waze-style rounded chevron ──
 			{
 				const s = 64;
 				const c = document.createElement('canvas');
@@ -251,29 +251,51 @@
 				const ctx = c.getContext('2d')!;
 				const cx = s / 2;
 
+				// Drop shadow
 				ctx.save();
-				ctx.shadowColor = 'rgba(0,0,0,0.4)';
-				ctx.shadowBlur = 6;
-				ctx.shadowOffsetY = 2;
+				ctx.shadowColor = 'rgba(0,0,0,0.45)';
+				ctx.shadowBlur = 8;
+				ctx.shadowOffsetY = 3;
 
+				// Waze-style rounded chevron: pointed tip at top, rounded body, concave notch at bottom
 				ctx.beginPath();
-				ctx.moveTo(cx, 6);
-				ctx.lineTo(cx + 22, 54);
-				ctx.lineTo(cx - 22, 54);
+				ctx.moveTo(cx, 5);
+				// right side: tip → bottom-right (bezier for smooth taper)
+				ctx.bezierCurveTo(cx + 5, 18, cx + 22, 40, cx + 22, 52);
+				// bottom-right rounded corner
+				ctx.quadraticCurveTo(cx + 22, 59, cx + 14, 59);
+				// concave notch bottom-right → center
+				ctx.quadraticCurveTo(cx + 7, 52, cx, 47);
+				// concave notch center → bottom-left
+				ctx.quadraticCurveTo(cx - 7, 52, cx - 14, 59);
+				// bottom-left rounded corner
+				ctx.quadraticCurveTo(cx - 22, 59, cx - 22, 52);
+				// left side: bottom-left → tip (bezier)
+				ctx.bezierCurveTo(cx - 22, 40, cx - 5, 18, cx, 5);
 				ctx.closePath();
+
 				ctx.fillStyle = '#0099FF';
 				ctx.fill();
 				ctx.restore();
 
+				// White border
 				ctx.strokeStyle = '#ffffff';
 				ctx.lineWidth = 2.5;
 				ctx.lineJoin = 'round';
-				ctx.beginPath();
-				ctx.moveTo(cx, 6);
-				ctx.lineTo(cx + 22, 54);
-				ctx.lineTo(cx - 22, 54);
-				ctx.closePath();
 				ctx.stroke();
+
+				// Inner highlight (subtle lighter overlay on top half)
+				ctx.save();
+				ctx.beginPath();
+				ctx.moveTo(cx, 10);
+				ctx.bezierCurveTo(cx + 3, 20, cx + 15, 36, cx + 15, 46);
+				ctx.quadraticCurveTo(cx + 8, 50, cx, 44);
+				ctx.quadraticCurveTo(cx - 8, 50, cx - 15, 46);
+				ctx.bezierCurveTo(cx - 15, 36, cx - 3, 20, cx, 10);
+				ctx.closePath();
+				ctx.fillStyle = 'rgba(255,255,255,0.18)';
+				ctx.fill();
+				ctx.restore();
 
 				map.addImage('nav-arrow', { width: s, height: s, data: new Uint8Array(ctx.getImageData(0, 0, s, s).data) });
 			}
