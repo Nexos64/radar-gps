@@ -3,7 +3,7 @@
  * Ensures the PWA loads instantly from cache on iOS home screen.
  */
 
-const CACHE_NAME = 'radar-gps-v3';
+const CACHE_NAME = 'radar-gps-v4';
 
 // App shell files to precache
 const APP_SHELL = [
