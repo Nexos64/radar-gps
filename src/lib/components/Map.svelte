@@ -257,21 +257,22 @@
 				ctx.shadowBlur = 8;
 				ctx.shadowOffsetY = 3;
 
-				// Waze-style arrow: sharp tip, wide wings, deep concave notch
+				// Waze-style arrow: rounded tip, wide wings, deep concave notch
 				ctx.beginPath();
-				ctx.moveTo(cx, 4);
+				ctx.moveTo(cx - 5, 10);  // left of rounded tip
+				ctx.arcTo(cx, 3, cx + 5, 10, 5);  // rounded tip
 				// right side: flares outward quickly then straightens toward the wing
-				ctx.bezierCurveTo(cx + 5, 15, cx + 27, 38, cx + 27, 52);
+				ctx.bezierCurveTo(cx + 7, 18, cx + 30, 40, cx + 30, 52);
 				// bottom-right rounded corner
-				ctx.arcTo(cx + 27, 62, cx + 15, 62, 10);
-				// concave notch: right → center, deeper with cubic bezier for smooth S-curve
-				ctx.bezierCurveTo(cx + 12, 62, cx + 4, 47, cx, 44);
+				ctx.arcTo(cx + 30, 62, cx + 18, 62, 8);
+				// concave notch: right → center
+				ctx.bezierCurveTo(cx + 15, 62, cx + 4, 47, cx, 44);
 				// concave notch: center → left (mirror)
-				ctx.bezierCurveTo(cx - 4, 47, cx - 12, 62, cx - 15, 62);
+				ctx.bezierCurveTo(cx - 4, 47, cx - 15, 62, cx - 18, 62);
 				// bottom-left rounded corner
-				ctx.arcTo(cx - 27, 62, cx - 27, 52, 10);
+				ctx.arcTo(cx - 30, 62, cx - 30, 52, 8);
 				// left side: back to tip
-				ctx.bezierCurveTo(cx - 27, 38, cx - 5, 15, cx, 4);
+				ctx.bezierCurveTo(cx - 30, 40, cx - 7, 18, cx - 5, 10);
 				ctx.closePath();
 
 				ctx.fillStyle = '#00A0E8';
@@ -288,10 +289,10 @@
 				ctx.save();
 				ctx.beginPath();
 				ctx.moveTo(cx, 9);
-				ctx.bezierCurveTo(cx + 3, 18, cx + 18, 38, cx + 18, 48);
-				ctx.bezierCurveTo(cx + 9, 52, cx + 3, 48, cx, 44);
-				ctx.bezierCurveTo(cx - 3, 48, cx - 9, 52, cx - 18, 48);
-				ctx.bezierCurveTo(cx - 18, 38, cx - 3, 18, cx, 9);
+				ctx.bezierCurveTo(cx + 3, 18, cx + 20, 40, cx + 20, 50);
+				ctx.bezierCurveTo(cx + 11, 54, cx + 3, 49, cx, 44);
+				ctx.bezierCurveTo(cx - 3, 49, cx - 11, 54, cx - 20, 50);
+				ctx.bezierCurveTo(cx - 20, 40, cx - 3, 18, cx, 9);
 				ctx.closePath();
 				ctx.fillStyle = 'rgba(255,255,255,0.18)';
 				ctx.fill();
