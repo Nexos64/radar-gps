@@ -257,24 +257,24 @@
 				ctx.shadowBlur = 8;
 				ctx.shadowOffsetY = 3;
 
-				// Waze-style rounded teardrop: pointed tip, smooth bezier sides, arcTo rounded bottom corners
+				// Waze-style arrow: sharp tip, wide wings, deep concave notch
 				ctx.beginPath();
-				ctx.moveTo(cx, 5);
-				// right side: smooth bezier from tip outward and down
-				ctx.bezierCurveTo(cx + 5, 18, cx + 25, 40, cx + 25, 53);
-				// bottom-right rounded corner — arcTo gives a true tangent arc
-				ctx.arcTo(cx + 25, 62, cx + 13, 62, 10);
-				// concave notch: bottom-right to center
-				ctx.quadraticCurveTo(cx + 6, 54, cx, 49);
-				// concave notch: center to bottom-left
-				ctx.quadraticCurveTo(cx - 6, 54, cx - 13, 62);
+				ctx.moveTo(cx, 4);
+				// right side: flares outward quickly then straightens toward the wing
+				ctx.bezierCurveTo(cx + 5, 15, cx + 27, 38, cx + 27, 52);
+				// bottom-right rounded corner
+				ctx.arcTo(cx + 27, 62, cx + 15, 62, 10);
+				// concave notch: right → center, deeper with cubic bezier for smooth S-curve
+				ctx.bezierCurveTo(cx + 12, 62, cx + 4, 47, cx, 44);
+				// concave notch: center → left (mirror)
+				ctx.bezierCurveTo(cx - 4, 47, cx - 12, 62, cx - 15, 62);
 				// bottom-left rounded corner
-				ctx.arcTo(cx - 25, 62, cx - 25, 53, 10);
+				ctx.arcTo(cx - 27, 62, cx - 27, 52, 10);
 				// left side: back to tip
-				ctx.bezierCurveTo(cx - 25, 40, cx - 5, 18, cx, 5);
+				ctx.bezierCurveTo(cx - 27, 38, cx - 5, 15, cx, 4);
 				ctx.closePath();
 
-				ctx.fillStyle = '#0099FF';
+				ctx.fillStyle = '#00A0E8';
 				ctx.fill();
 				ctx.restore();
 
@@ -287,11 +287,11 @@
 				// Inner highlight (subtle lighter overlay on top half)
 				ctx.save();
 				ctx.beginPath();
-				ctx.moveTo(cx, 10);
-				ctx.bezierCurveTo(cx + 3, 20, cx + 17, 38, cx + 17, 48);
-				ctx.quadraticCurveTo(cx + 9, 52, cx, 47);
-				ctx.quadraticCurveTo(cx - 9, 52, cx - 17, 48);
-				ctx.bezierCurveTo(cx - 17, 38, cx - 3, 20, cx, 10);
+				ctx.moveTo(cx, 9);
+				ctx.bezierCurveTo(cx + 3, 18, cx + 18, 38, cx + 18, 48);
+				ctx.bezierCurveTo(cx + 9, 52, cx + 3, 48, cx, 44);
+				ctx.bezierCurveTo(cx - 3, 48, cx - 9, 52, cx - 18, 48);
+				ctx.bezierCurveTo(cx - 18, 38, cx - 3, 18, cx, 9);
 				ctx.closePath();
 				ctx.fillStyle = 'rgba(255,255,255,0.18)';
 				ctx.fill();
