@@ -266,9 +266,9 @@
 				// bottom-right rounded corner
 				ctx.arcTo(cx + 30, 62, cx + 18, 62, 8);
 				// concave notch: right → center
-				ctx.bezierCurveTo(cx + 15, 62, cx + 4, 47, cx, 44);
+				ctx.bezierCurveTo(cx + 15, 62, cx + 5, 56, cx, 53);
 				// concave notch: center → left (mirror)
-				ctx.bezierCurveTo(cx - 4, 47, cx - 15, 62, cx - 18, 62);
+				ctx.bezierCurveTo(cx - 5, 56, cx - 15, 62, cx - 18, 62);
 				// bottom-left rounded corner
 				ctx.arcTo(cx - 30, 62, cx - 30, 52, 8);
 				// left side: back to tip
@@ -290,8 +290,8 @@
 				ctx.beginPath();
 				ctx.moveTo(cx, 9);
 				ctx.bezierCurveTo(cx + 3, 18, cx + 20, 40, cx + 20, 50);
-				ctx.bezierCurveTo(cx + 11, 54, cx + 3, 49, cx, 44);
-				ctx.bezierCurveTo(cx - 3, 49, cx - 11, 54, cx - 20, 50);
+				ctx.bezierCurveTo(cx + 11, 58, cx + 4, 54, cx, 53);
+				ctx.bezierCurveTo(cx - 4, 54, cx - 11, 58, cx - 20, 50);
 				ctx.bezierCurveTo(cx - 20, 40, cx - 3, 18, cx, 9);
 				ctx.closePath();
 				ctx.fillStyle = 'rgba(255,255,255,0.18)';
